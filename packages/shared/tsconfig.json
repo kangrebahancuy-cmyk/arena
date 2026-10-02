@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Shared code runs in the browser AND in Node, so it may use neither DOM nor Node globals.
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src"]
+}

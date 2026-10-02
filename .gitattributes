@@ -1,0 +1,16 @@
+# Always use LF in the working tree, even on Windows (git's default there is CRLF).
+# This keeps Prettier/ESLint results identical across machines and avoids noisy diffs.
+* text=auto eol=lf
+
+# Binary assets: never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ogg binary
+*.mp3 binary
+*.wav binary

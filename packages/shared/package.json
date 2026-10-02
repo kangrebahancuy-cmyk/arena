@@ -1,0 +1,22 @@
+{
+  "name": "@project-realm/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Contracts shared by client and server: constants, HTTP contracts and runtime validation schemas.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

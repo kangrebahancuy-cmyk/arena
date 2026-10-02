@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // TS 6.0: DOM.Iterable is now part of "DOM". Only "vite/client" ambient types are enabled, so
+    // Node globals (process, Buffer, __dirname...) are NOT visible to browser code.
+    "lib": ["ES2023", "DOM"],
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.ts"]
+}
