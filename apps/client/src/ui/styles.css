@@ -1,0 +1,217 @@
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0d18;
+  --surface: #11162b;
+  --border: #252c4a;
+  --text: #e8ebf7;
+  --muted: #8f97ba;
+  --accent-a: #8b6cff;
+  --accent-b: #2dd4bf;
+
+  --tone-info: #60a5fa;
+  --tone-ok: #34d399;
+  --tone-warn: #fbbf24;
+  --tone-bad: #f87171;
+
+  /* System fonts only: no third-party requests, no licensing questions. */
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(900px 480px at 50% -8%, rgb(139 108 255 / 22%), transparent 70%),
+    radial-gradient(700px 400px at 100% 100%, rgb(45 212 191 / 10%), transparent 70%), var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* The page is a viewport-sized stage: the game canvas (Phase 2) will take this place. */
+#app {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.boot {
+  width: min(100%, 520px);
+}
+
+.card {
+  background: linear-gradient(180deg, rgb(255 255 255 / 3%), transparent), var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: clamp(20px, 5vw, 32px);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 45%);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand img {
+  flex: none;
+  border-radius: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 5vw, 1.9rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tagline {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.section-title {
+  margin: 28px 0 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.checks {
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.row dt {
+  color: var(--muted);
+}
+
+.row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pill {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 10px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pill--info {
+  color: var(--tone-info);
+}
+.pill--ok {
+  color: var(--tone-ok);
+}
+.pill--warn {
+  color: var(--tone-warn);
+}
+.pill--bad {
+  color: var(--tone-bad);
+}
+
+.detail {
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.actions[hidden] {
+  display: none; /* `display: flex` above would otherwise override the UA [hidden] rule */
+}
+
+.button {
+  min-height: 44px; /* comfortable touch target */
+  padding: 0 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1a2140;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.button:hover {
+  border-color: var(--accent-a);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-b);
+  outline-offset: 2px;
+}
+
+.button[hidden] {
+  display: none;
+}
+
+.note {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 420px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pill,
+  .button {
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+  }
+}
