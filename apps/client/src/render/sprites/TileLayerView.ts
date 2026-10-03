@@ -37,13 +37,17 @@ export class TileLayerView extends Container {
 
   /** Rebuilds the chunks that a tile change touched. Called for fog reveal / map edits. */
   applyTileChanges(
-    changes: readonly { readonly column: number; readonly row: number; readonly index: number }[],
+    changes: readonly {
+      readonly column: number;
+      readonly row: number;
+      readonly tileId: string | null;
+    }[],
   ): void {
     const dirty = new Set<string>();
     for (const change of changes) {
       const column = Math.round(change.column);
       const row = Math.round(change.row);
-      this.state.tiles[row * this.state.columns + column] = change.index;
+      this.state.tiles[row * this.state.columns + column] = change.tileId;
       dirty.add(chunkKey(Math.floor(column / CHUNK_TILES), Math.floor(row / CHUNK_TILES)));
     }
 
@@ -145,11 +149,11 @@ export class TileLayerView extends Container {
 
     for (let row = startRow; row < endRow; row += 1) {
       for (let column = startColumn; column < endColumn; column += 1) {
-        const index = this.state.tiles[row * this.state.columns + column] ?? -1;
-        if (index < 0) {
-          continue; // -1 = nothing here (transparent), e.g. a cleared fog cloud
+        const tileId = this.state.tiles[row * this.state.columns + column] ?? null;
+        if (tileId === null) {
+          continue; // Transparent decoration cells have no tile sprite.
         }
-        const frame = tileFrame(index);
+        const frame = tileFrame(tileId);
         if (frame === null) {
           continue; // unknown tile index: draw nothing rather than guess
         }

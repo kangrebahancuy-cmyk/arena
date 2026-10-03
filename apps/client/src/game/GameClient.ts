@@ -20,16 +20,16 @@ export type ClientStateListener = (state: ClientState) => void;
  * GameClient — the entry point of the game on the browser side and the composition root of the
  * client.
  *
- * It owns the client configuration, the logger, the handshake with the authoritative server, and
- * (from later phases) the renderer, the input system and the world session. Modules below it stay
- * replaceable and testable: they never know about each other.
+ * It owns the client configuration, logger and handshake with the HTTP server. `main.ts` composes it
+ * with the world bootstrap, which owns the renderer, input, local player controller and world session.
+ * The modules remain replaceable and testable: they never need to know about each other.
  *
- * What it really does today: performs the boot handshake against `GET /api/health`, verifies that
- * the running server speaks this build's protocol, and reports the outcome to whoever listens.
+ * What it does: performs the boot handshake against `GET /api/health`, verifies that the running
+ * server speaks this build's protocol, and reports the result to its subscribers. After that succeeds,
+ * `main.ts` enters the separately bootstrapped prototype world.
  *
- * What it deliberately does NOT do: pretend there is a game. There is no renderer (Phase 2), no
- * simulation, no world state and no realtime connection (Phase 10). After a successful handshake the
- * client is "online" and the world session stays closed — a state the UI states plainly.
+ * What it deliberately does NOT do: simulate a server-owned world or connect players to each other.
+ * The Phase 3 player is local/offline; realtime movement authority and multiplayer remain Phase 10.
  */
 export class GameClient {
   private readonly config: ClientConfig;
@@ -80,6 +80,7 @@ export class GameClient {
       developmentBuild: this.config.isDevelopmentBuild,
       protocolVersion: this.config.game.protocolVersion,
       simulationHz: this.config.game.simulation.hz,
+      playerSpeedTilesPerSecond: this.config.game.movement.playerSpeedTilesPerSecond,
     });
 
     // Start first, then subscribe. BootController replays the current state to every new subscriber,

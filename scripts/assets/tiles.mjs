@@ -8,7 +8,16 @@ import { PALETTE } from './palette.mjs';
 export const TILE_SIZE = 16;
 
 /** Order of the tiles inside tileset.png. The TypeScript manifest mirrors this list. */
-export const TILE_ORDER = ['grass', 'grass_flowers', 'dirt', 'water', 'stone', 'cloud'];
+export const TILE_ORDER = [
+  'grass',
+  'grass_flowers',
+  'dirt',
+  'water',
+  'stone',
+  'cloud',
+  'stone_wall',
+  'wood_plank',
+];
 
 /** Base grass with deterministic noise: identical output on every run. */
 function paintGrass(canvas) {
@@ -120,6 +129,36 @@ function paintCloud(canvas) {
   canvas.speckle(PALETTE.cloudLight, 0.07, 73, [1, 1, TILE_SIZE - 2, TILE_SIZE - 2], false);
 }
 
+/** A solid old-quarry wall tile, intentionally distinct from the stone floor. */
+function paintStoneWall(canvas) {
+  canvas.fill(PALETTE.wallMortar);
+  canvas.fillRect(1, 1, 14, 5, PALETTE.wallBase);
+  canvas.fillRect(1, 7, 14, 4, PALETTE.wallDark);
+  canvas.fillRect(1, 12, 14, 3, PALETTE.wallBase);
+  canvas.fillRect(1, 1, 14, 1, PALETTE.wallLight);
+  canvas.fillRect(1, 7, 14, 1, PALETTE.wallLight);
+  canvas.fillRect(1, 12, 14, 1, PALETTE.wallLight);
+  canvas.set(7, 6, PALETTE.wallMortar);
+  canvas.set(3, 11, PALETTE.wallMortar);
+  canvas.set(12, 11, PALETTE.wallMortar);
+  canvas.set(4, 6, PALETTE.wallDark);
+  canvas.set(11, 11, PALETTE.wallDark);
+}
+
+/** Short wooden bridge planks for the trail across Moonmere's narrow outlet. */
+function paintWoodPlank(canvas) {
+  canvas.fill(PALETTE.woodBase);
+  for (let y = 1; y < TILE_SIZE; y += 4) {
+    canvas.fillRect(1, y, TILE_SIZE - 2, 1, PALETTE.woodDark);
+    canvas.fillRect(2, y + 1, TILE_SIZE - 4, 1, PALETTE.woodLight);
+  }
+  for (const x of [1, TILE_SIZE - 2]) {
+    for (let y = 2; y < TILE_SIZE; y += 4) {
+      canvas.set(x, y, PALETTE.outline);
+    }
+  }
+}
+
 const TILE_PAINTERS = {
   grass: paintGrass,
   grass_flowers: paintGrassFlowers,
@@ -127,6 +166,8 @@ const TILE_PAINTERS = {
   water: paintWater,
   stone: paintStone,
   cloud: paintCloud,
+  stone_wall: paintStoneWall,
+  wood_plank: paintWoodPlank,
 };
 
 /** Paints one 16x16 ground tile. Exported so objects/effects can reuse the same building blocks. */

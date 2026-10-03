@@ -6,6 +6,7 @@ import { systemClock } from '../core/clock';
 import type { Clock } from '../core/clock';
 import { createStartupLogger, loggerFromPino } from '../core/logger';
 import { buildApp } from '../http/buildApp';
+import { ServerWorldMap } from './WorldMap';
 
 /**
  * Lifecycle of the game server.
@@ -34,19 +35,20 @@ export interface GameServerOptions {
  * server.
  *
  * It owns configuration, logging, the HTTP application and its lifecycle (build, listen, shut down),
- * and (from Phase 10) the game loop, the world simulation and the WebSocket gateway. The HTTP
- * details live in `http/`, the rules in `config/`, the seams to the outside world in `ports/`.
+ * plus the validated Greenhaven map and its collision-aware movement validator. The game loop, player
+ * entities and WebSocket gateway arrive in Phase 10. HTTP details live in `http/`, rules in `config/`,
+ * and external-system seams in `ports/`.
  *
- * What it is authoritative about today: it is the single source of truth for `/api/health` (its
- * version, its uptime, its clock, the protocol version). It deliberately does NOT simulate a world:
- * there is no tick, no entity and no socket yet — the roadmap puts those in Phases 2-10, and none of
- * them is faked here.
+ * Today it is authoritative about `/api/health` (version, uptime, clock and protocol version), and
+ * it can validate a candidate position or resolve a displacement against the shared map. It does not
+ * accept gameplay intents or run a world tick yet; those arrive with the multiplayer phase.
  */
 export class GameServer {
   private readonly config: AppConfig;
   private readonly version: string;
   private readonly clock: Clock;
   private readonly startupLog: Logger;
+  private readonly world: ServerWorldMap;
   private app: FastifyInstance | undefined;
   private pinoLog: Logger | undefined;
   private appClosed = false;
@@ -57,6 +59,7 @@ export class GameServer {
     this.version = options.version;
     this.clock = options.clock ?? systemClock;
     this.startupLog = createStartupLogger(this.config.log.level);
+    this.world = new ServerWorldMap();
   }
 
   /**
@@ -69,6 +72,11 @@ export class GameServer {
 
   getState(): ServerState {
     return this.state;
+  }
+
+  /** The validated shared map and collision validator loaded by this server instance. */
+  getWorldMap(): ServerWorldMap {
+    return this.world;
   }
 
   /** Where the server is reachable, or `undefined` while it is not listening. */
@@ -126,6 +134,7 @@ export class GameServer {
       port: address?.port ?? this.config.port,
       protocolVersion: this.config.game.protocolVersion,
       simulationHz: this.config.game.simulation.hz,
+      worldMapId: this.world.map.id,
     });
   }
 

@@ -1,6 +1,7 @@
 import type { AssetProgress } from '../render/Assets';
-import type { Direction } from '@project-realm/shared';
+import type { Direction, NearbyNpcState, NpcDialogueState } from '@project-realm/shared';
 import { el } from './dom';
+import { DialoguePanel } from './DialoguePanel';
 import { WorldHud } from './WorldHud';
 import type { WorldHudModel } from './WorldHud';
 
@@ -9,6 +10,11 @@ export interface WorldScreenActions {
   readonly onZoomOut: () => void;
   readonly onResetZoom: () => void;
   readonly onTogglePixelated: () => void;
+  readonly onInteract: () => void;
+  readonly onAttack: () => void;
+  readonly onAdvanceDialogue: () => void;
+  readonly onChooseDialogueChoice: (choiceId: string) => void;
+  readonly onCloseDialogue: () => void;
 }
 
 /**
@@ -21,6 +27,7 @@ export interface WorldScreenActions {
 export class WorldScreen {
   readonly canvas: HTMLCanvasElement;
   readonly hud: WorldHud;
+  readonly dialoguePanel: DialoguePanel;
   readonly element: HTMLElement;
 
   private readonly overlay: HTMLElement;
@@ -29,13 +36,22 @@ export class WorldScreen {
   private readonly progressBar: HTMLElement;
   private readonly notice: HTMLElement;
   private readonly dPad: HTMLElement;
+  private readonly interactionPanel: HTMLElement;
+  private readonly interactionHint: HTMLElement;
+  private readonly interactionButton: HTMLButtonElement;
+  private nearbyNpc: NearbyNpcState | null = null;
   private hudVisible = true;
 
   constructor(root: HTMLElement, actions: WorldScreenActions) {
     // The canvas is created as a real element (not by the renderer) so its CSS box drives the size:
     // the world follows the layout, and the renderer follows the canvas.
-    this.canvas = el('canvas', { class: 'world__canvas', 'aria-label': 'Prototype world' });
+    this.canvas = el('canvas', { class: 'world__canvas', 'aria-label': 'Greenhaven world' });
     this.hud = new WorldHud();
+    this.dialoguePanel = new DialoguePanel({
+      onContinue: actions.onAdvanceDialogue,
+      onChoose: actions.onChooseDialogueChoice,
+      onClose: actions.onCloseDialogue,
+    });
 
     this.overlayTitle = el('h2', { class: 'world__overlay-title' }, 'Preparing the world…');
     this.overlayDetail = el('p', { class: 'world__overlay-detail' }, 'Connecting to the renderer');
@@ -52,15 +68,23 @@ export class WorldScreen {
       ),
     );
 
-    // Prototype labelling, stated on screen rather than only in the docs: the art is programmer art,
-    // there is no login, and there is no server-side world yet. Nobody should mistake this for a game.
+    // Honest scope note: programmer art and NPC dialogue work locally; accounts and live server
+    // player authority are still future systems.
     this.notice = el(
       'p',
       { class: 'world__notice' },
-      'Prototype zone - placeholder art drawn by scripts/assets, no login and no server-side world yet.',
+      'Greenhaven prototype · original generated art · local monsters and dialogue · Space attack · no login',
     );
 
     this.dPad = this.buildTouchControls(actions);
+    this.interactionHint = el('p', { class: 'world__interaction-hint' }, '');
+    this.interactionButton = this.button('Talk', actions.onInteract);
+    this.interactionPanel = el(
+      'aside',
+      { class: 'world__interaction', hidden: '' },
+      this.interactionHint,
+      this.interactionButton,
+    );
 
     this.element = el(
       'main',
@@ -70,6 +94,8 @@ export class WorldScreen {
       this.hud.element,
       this.notice,
       this.dPad,
+      this.interactionPanel,
+      this.dialoguePanel.element,
     );
     root.replaceChildren(this.element);
   }
@@ -105,6 +131,16 @@ export class WorldScreen {
     this.hud.update(model);
   }
 
+  updateInteraction(npc: NearbyNpcState | null): void {
+    this.nearbyNpc = npc;
+    this.renderInteractionPrompt();
+  }
+
+  updateDialogue(dialogue: NpcDialogueState | null): void {
+    this.dialoguePanel.update(dialogue);
+    this.renderInteractionPrompt();
+  }
+
   toggleHud(): boolean {
     this.hudVisible = this.hud.toggle();
     return this.hudVisible;
@@ -112,6 +148,14 @@ export class WorldScreen {
 
   destroy(): void {
     this.element.remove();
+  }
+
+  private renderInteractionPrompt(): void {
+    const canTalk = this.nearbyNpc !== null && this.dialoguePanel.element.hidden;
+    this.interactionPanel.hidden = !canTalk;
+    this.interactionButton.disabled = !canTalk;
+    this.interactionButton.textContent = 'Talk · E';
+    this.interactionHint.textContent = canTalk ? `Nearby: ${this.nearbyNpc?.name ?? ''}` : '';
   }
 
   /**
@@ -142,6 +186,7 @@ export class WorldScreen {
       el(
         'div',
         { class: 'world__buttons' },
+        this.button('Attack', actions.onAttack),
         this.button('Zoom in', actions.onZoomIn),
         this.button('Zoom out', actions.onZoomOut),
         this.button('Reset zoom', actions.onResetZoom),

@@ -45,9 +45,9 @@ export interface AppConfig {
     readonly windowMs: number;
   };
   /**
-   * Game rules shared with the client (see `@project-realm/shared`). Today this is the protocol
-   * version reported by `/api/health` and the fixed timestep contract; environment knobs for it
-   * arrive with the simulation that consumes them (Phase 2 / Phase 10).
+   * Game rules shared with the client (see `@project-realm/shared`): protocol version, fixed timestep,
+   * and movement speed. The server reports the protocol version today; authoritative movement consumes
+   * the shared rules when the server simulation arrives (Phase 10).
    */
   readonly game: GameConfig;
 }

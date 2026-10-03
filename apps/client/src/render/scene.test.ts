@@ -2,12 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { diffScene, emptyScene } from './scene';
 import type { ActorState, ObjectState, RenderCommand, TileLayerState, WorldScene } from './scene';
 
-function layer(id = 'ground'): TileLayerState {
-  return { id, tiles: [0, 1, 2, 3], columns: 2, rows: 2, sheet: 'tileset' };
+function layer(id = 'ground', role: 'ground' | 'decoration' = 'ground'): TileLayerState {
+  return {
+    id,
+    role,
+    tiles: ['grass', 'dirt', null, 'stone'],
+    columns: 2,
+    rows: 2,
+    sheet: 'tileset',
+  };
 }
 
-function object(id: string, column = 1, row = 1): ObjectState {
-  return { id, sprite: 'bush', layer: 'objects', column, row };
+function object(id: string, x = 1.5, y = 2): ObjectState {
+  return { id, sprite: 'bush', layer: 'objects', position: { x, y } };
 }
 
 function actor(id: string, x = 2, y = 3): ActorState {
@@ -18,6 +25,7 @@ function actor(id: string, x = 2, y = 3): ActorState {
     position: { x, y },
     facing: 'south',
     moving: false,
+    animationState: 'idle',
   };
 }
 
@@ -47,7 +55,7 @@ describe('diffScene', () => {
     // Tile edits travel as `tiles-changed` patches, so an in-place edit must NOT look like a new layer.
     const before = scene({ layers: [layer()] });
     const after = scene({ layers: [layer()] });
-    (after.layers[0] as { tiles: number[] }).tiles[0] = 5;
+    (after.layers[0] as { tiles: (string | null)[] }).tiles[0] = 'water';
 
     expect(diffScene(before, after)).toEqual([]);
   });
@@ -55,7 +63,9 @@ describe('diffScene', () => {
   it('reports a changed entry by identity, and keeps the added/changed distinction', () => {
     const unchanged = actor('player');
     const before = scene({ actors: new Map([['player', unchanged]]) });
-    const next = scene({ actors: new Map([['player', { ...unchanged, moving: true }]]) });
+    const next = scene({
+      actors: new Map([['player', { ...unchanged, moving: true, animationState: 'walk' }]]),
+    });
 
     const commands = diffScene(before, next);
     expect(typesOf(commands)).toEqual(['actor-changed']);

@@ -22,14 +22,14 @@ Vite menyajikan folder `public/`, jadi berkas ini tersedia di `/assets/*.png` �
 
 ## Peta berkas
 
-| Berkas        | Ukuran | Isi                                                                                                                        |
-| ------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `tileset.png` | 96×16  | 6 tile tanah 16×16, satu baris: `grass`, `grass_flowers`, `dirt`, `water`, `stone`, `cloud`                                |
-| `objects.png` | 128×32 | 4 objek dunia 32×32 (di-anchor di bawah, supaya boleh menjorok ke tile atasnya): `tree_broad`, `tree_pine`, `bush`, `rock` |
-| `actors.png`  | 96×96  | 2 penampilan × 3 frame jalan × 4 arah, frame 16×24 (`player`, `villager`)                                                  |
-| `effects.png` | 32×8   | 4 frame 8×8 untuk `dust` (puff langkah kaki)                                                                               |
+| Berkas        | Ukuran | Isi                                                                                                                                          |
+| ------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tileset.png` | 128×16 | 8 tile 16×16: `grass`, `grass_flowers`, `dirt`, `water`, `stone`, `cloud`, `stone_wall`, `wood_plank`                                        |
+| `objects.png` | 160×32 | 5 objek 32×32: `tree_broad`, `tree_pine`, `bush`, `rock`, `cottage`; semuanya di-anchor bawah untuk depth sorting dan overhang yang alami    |
+| `actors.png`  | 384×96 | 8 penampilan × 3 frame × 4 arah, frame 16×24 (`player`, `villager`, `elder`, `merchant`, `guard`, `forest_slime`, `wild_boar`, `thorn_wolf`) |
+| `effects.png` | 32×8   | 4 frame 8×8 untuk `dust` (puff langkah kaki)                                                                                                 |
 
-Susunan baris pada `actors.png` (dari atas): **selatan, utara, timur, barat**. Arah barat adalah cermin dari timur, jadi keduanya dijamin konsisten.
+Susunan baris pada `actors.png` (dari atas): **selatan, utara, timur, barat**. Arah barat adalah cermin dari timur, jadi keduanya dijamin konsisten. Tiga penampilan monster Greenhaven—Forest Slime, Wild Boar, dan Thorn Wolf—digambar oleh painter orisinal terpisah dengan palet masing-masing, bukan sprite pinjaman.
 
 ## Kontrak antara gambar dan kode
 
@@ -49,13 +49,13 @@ Karena itu, mengubah susunan gambar wajib mengubah manifest (dan sebaliknya) dal
 
 **Objek baru** — tambahkan painter di `scripts/assets/objects.mjs` (kanvas 32×32, gambar objek tumbuh ke atas dari tepi bawah) dan daftarkan di `OBJECT_ORDER`.
 
-**Penampilan karakter baru** — tambahkan entri di `ACTOR_PALETTES` (`scripts/assets/actors.mjs`) dan `ACTOR_ORDER`. Tiga frame jalan dihasilkan dari satu deskripsi tubuh, sehingga tidak ada frame yang bisa lupa digambar.
+**Karakter/NPC baru** — tambahkan entri di `ACTOR_PALETTES` (`scripts/assets/actors.mjs`) dan `ACTOR_ORDER`; tiga frame jalan dihasilkan dari satu deskripsi tubuh. **Monster baru** juga didaftarkan di `ACTOR_ORDER`/`ACTOR_PALETTES` dan memerlukan painter monster tersendiri di `paintMonsterFrame()` agar siluet dan paletnya khas.
 
 **Efek kecil** — efek 8×8 ditulis sebagai **ASCII art** di `scripts/assets/effects.mjs`. Pada ukuran itu, pola eksplisit lebih mudah dibaca dan hasilnya lebih baik daripada menggambar elips secara prosedural (itu pelajaran nyata dari fase ini: versi prosedural pertama terlihat seperti gumpalan).
 
 ## Yang belum ada, dan disengaja
 
-- Tidak ada animasi serang, mati, atau duduk (Fase 6+).
-- Tidak ada autotiling/transisi tepi antar-biome: tile air dan tanah punya bingkai gelap sendiri. Autotiling 47-tile masuk bersama format peta dan tabrakan di Fase 4.
+- `actors.png` saat ini hanya menyediakan idle/walk cycle; belum ada animasi serang, hurt, atau mati. State tempur monster ditunjukkan oleh logika/HUD, bukan animasi khusus.
+- Belum ada autotiling/transisi tepi antar-biome: tile air dan tanah punya bingkai gelap sendiri. Greenhaven memakai palet dan susunan tile prototipe; atlas transisi 47-tile bisa ditambahkan sebagai peningkatan seni terpisah.
 - Tidak ada atlas efisien/pengemasan; empat berkas kecil sudah benar untuk ukuran sekarang.
-- Tidak ada pipeline kompresi atau CDN. Empat berkas ini totalnya di bawah 3 KB.
+- Tidak ada pipeline kompresi atau CDN. Empat berkas generator ini totalnya sekitar 6,8 KB; `actors.png` kini mencakup NPC dan monster orisinal.

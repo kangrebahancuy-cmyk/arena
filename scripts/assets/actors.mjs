@@ -13,24 +13,88 @@ export const ACTOR_FRAMES = 3;
 export const ACTOR_FACINGS = ['south', 'north', 'east', 'west'];
 
 /** Order of the actors inside actors.png. The TypeScript manifest mirrors this list. */
-export const ACTOR_ORDER = ['player', 'villager'];
+export const ACTOR_ORDER = [
+  'player',
+  'villager',
+  'elder',
+  'merchant',
+  'guard',
+  'forest_slime',
+  'wild_boar',
+  'thorn_wolf',
+];
 
 export const ACTOR_PALETTES = {
   player: {
     skin: PALETTE.skinPlayer,
     hair: PALETTE.hairPlayer,
+    beard: null,
     shirt: PALETTE.shirtPlayer,
     shirtDark: PALETTE.shirtPlayerDark,
     pants: PALETTE.pantsPlayer,
     hat: null,
+    hatDark: null,
   },
   villager: {
     skin: PALETTE.skinVillager,
     hair: PALETTE.hairVillager,
+    beard: null,
     shirt: PALETTE.shirtVillager,
     shirtDark: PALETTE.shirtVillagerDark,
     pants: PALETTE.pantsVillager,
     hat: PALETTE.hatVillager,
+    hatDark: PALETTE.hatVillagerDark,
+  },
+  elder: {
+    skin: PALETTE.skinVillager,
+    hair: PALETTE.hairElder,
+    beard: PALETTE.beardElder,
+    shirt: PALETTE.shirtElder,
+    shirtDark: PALETTE.shirtElderDark,
+    pants: PALETTE.pantsVillager,
+    hat: null,
+    hatDark: null,
+  },
+  merchant: {
+    skin: PALETTE.skinVillager,
+    hair: PALETTE.hairVillager,
+    beard: null,
+    shirt: PALETTE.shirtMerchant,
+    shirtDark: PALETTE.shirtMerchantDark,
+    pants: PALETTE.pantsMerchant,
+    hat: PALETTE.hatVillager,
+    hatDark: PALETTE.hatVillagerDark,
+  },
+  guard: {
+    skin: PALETTE.skinPlayer,
+    hair: PALETTE.hairPlayer,
+    beard: null,
+    shirt: PALETTE.shirtGuard,
+    shirtDark: PALETTE.shirtGuardDark,
+    pants: PALETTE.pantsPlayer,
+    hat: PALETTE.hatGuard,
+    hatDark: PALETTE.hatGuardDark,
+  },
+  forest_slime: {
+    body: PALETTE.slimeBase,
+    light: PALETTE.slimeLight,
+    dark: PALETTE.slimeDark,
+    detail: PALETTE.slimeSpot,
+  },
+  wild_boar: {
+    body: PALETTE.boarBase,
+    light: PALETTE.boarLight,
+    dark: PALETTE.boarDark,
+    detail: PALETTE.boarSnout,
+    tusk: PALETTE.boarTusk,
+  },
+  thorn_wolf: {
+    body: PALETTE.wolfBase,
+    light: PALETTE.wolfLight,
+    dark: PALETTE.wolfDark,
+    detail: PALETTE.thornBase,
+    thornLight: PALETTE.thornLight,
+    eye: PALETTE.wolfEye,
   },
 };
 
@@ -40,7 +104,97 @@ export const ACTOR_PALETTES = {
  * The layout is fixed and documented so the sprite-sheet rectangles in the TypeScript manifest stay
  * verifiable: head rows 2-8, torso rows 9-15, legs rows 16-20, boots rows 21-22, inside a 16x24 box.
  */
+function paintMonsterFrame(actorName, facing, frame) {
+  const palette = ACTOR_PALETTES[actorName];
+  const canvas = new PixelCanvas(ACTOR_FRAME_WIDTH, ACTOR_FRAME_HEIGHT);
+  const side = facing === 'east';
+  const facingAway = facing === 'north';
+  const stride = frame === 1 ? -1 : frame === 2 ? 1 : 0;
+
+  canvas.fillEllipse(8, 22.5, 5, 1.5, PALETTE.shadow);
+
+  if (actorName === 'forest_slime') {
+    const squash = frame === 1 ? 1 : 0;
+    canvas.fillEllipse(8, 18.5 + squash, 6, 4 - squash * 0.6, palette.body);
+    canvas.fillEllipse(7, 16.5 + squash, 4.5, 2.8 - squash * 0.4, palette.light);
+    canvas.fillRect(4, 20, 8, 2, palette.dark);
+    canvas.fillEllipse(5, 16, 1.5, 1, palette.detail);
+    if (!facingAway) {
+      if (side) {
+        canvas.set(10, 17, PALETTE.outline);
+        canvas.set(11, 17, PALETTE.outline);
+      } else {
+        canvas.set(6, 17, PALETTE.outline);
+        canvas.set(9, 17, PALETTE.outline);
+        canvas.set(6, 18, PALETTE.outline);
+        canvas.set(9, 18, PALETTE.outline);
+      }
+    }
+  } else if (actorName === 'wild_boar') {
+    if (side) {
+      canvas.fillEllipse(7.5, 18, 6, 3, palette.body);
+      canvas.fillEllipse(7, 16.5, 4.5, 1.8, palette.light);
+      canvas.fillEllipse(11.5, 16, 3, 2.7, palette.body);
+      canvas.fillRect(12, 16, 4, 2, palette.detail);
+      canvas.fillRect(10, 13, 2, 2, palette.dark);
+      canvas.set(12, 15, PALETTE.outline);
+      canvas.fillRect(13, 17, 1, 2, palette.tusk);
+    } else {
+      canvas.fillEllipse(8, 18, 5.5, 3, palette.body);
+      canvas.fillEllipse(8, 15.5, 3.5, 3, palette.light);
+      canvas.fillRect(6, 15, 4, 4, palette.body);
+      canvas.fillRect(4, 13, 2, 3, palette.dark);
+      canvas.fillRect(10, 13, 2, 3, palette.dark);
+      canvas.fillRect(6, 18, 4, 2, palette.detail);
+      canvas.fillRect(5, 17, 1, 2, palette.tusk);
+      canvas.fillRect(10, 17, 1, 2, palette.tusk);
+      if (!facingAway) {
+        canvas.set(6, 15, PALETTE.outline);
+        canvas.set(9, 15, PALETTE.outline);
+      }
+    }
+    for (const legX of side ? [4, 10] : [5, 10]) {
+      const legY = 19 + (legX % 2 === 0 ? stride : -stride);
+      canvas.fillRect(legX, legY, 2, 3, palette.dark);
+      canvas.fillRect(legX, legY + 3, 2, 1, PALETTE.boots);
+    }
+  } else {
+    if (side) {
+      canvas.fillEllipse(7.5, 18, 6.5, 2.7, palette.body);
+      canvas.fillEllipse(7, 16.5, 4.5, 1.8, palette.light);
+      canvas.fillRect(5, 13, 2, 3, palette.detail);
+      canvas.fillRect(8, 14, 2, 2, palette.thornLight);
+      canvas.fillEllipse(11.5, 16, 3, 2.5, palette.body);
+      canvas.fillRect(12, 16, 4, 2, palette.light);
+      canvas.fillRect(11, 12, 2, 3, palette.dark);
+      canvas.set(12, 15, palette.eye);
+    } else {
+      canvas.fillEllipse(8, 18, 5, 3, palette.body);
+      canvas.fillEllipse(8, 15.5, 3.2, 3, palette.light);
+      canvas.fillRect(4, 12, 2, 4, palette.dark);
+      canvas.fillRect(10, 12, 2, 4, palette.dark);
+      canvas.fillRect(6, 17, 4, 2, palette.detail);
+      canvas.fillRect(6, 13, 2, 2, palette.thornLight);
+      canvas.fillRect(9, 13, 2, 2, palette.thornLight);
+      if (!facingAway) {
+        canvas.set(6, 15, palette.eye);
+        canvas.set(9, 15, palette.eye);
+      }
+    }
+    for (const legX of side ? [4, 8, 11] : [5, 10]) {
+      const legY = 19 + (legX % 2 === 0 ? stride : -stride);
+      canvas.fillRect(legX, legY, 2, 3, palette.dark);
+    }
+  }
+
+  canvas.outline(PALETTE.outline);
+  return canvas;
+}
+
 export function paintActorFrame(actorName, facing, frame) {
+  if (actorName === 'forest_slime' || actorName === 'wild_boar' || actorName === 'thorn_wolf') {
+    return paintMonsterFrame(actorName, facing, frame);
+  }
   const palette = ACTOR_PALETTES[actorName];
   const canvas = new PixelCanvas(ACTOR_FRAME_WIDTH, ACTOR_FRAME_HEIGHT);
   const side = facing === 'east';
@@ -112,10 +266,19 @@ export function paintActorFrame(actorName, facing, frame) {
     canvas.set(9, 6, PALETTE.outline);
   }
 
-  // ---- hat (villager only): a wide brim that also hides the hairline ----
+  // ---- beard (elder only): a small silver mark that reads at the prototype's 16px scale ----
+  if (palette.beard) {
+    if (side) {
+      canvas.fillRect(headX + 1, 7, 4, 2, palette.beard);
+    } else if (!facingAway) {
+      canvas.fillRect(headX + 1, 7, headWidth - 2, 2, palette.beard);
+    }
+  }
+
+  // ---- headwear: a brimmed travelling hat or a simple guard's helm ----
   if (palette.hat) {
     canvas.fillRect(headX - 2, 2, headWidth + 4, 2, palette.hat);
-    canvas.fillRect(headX - 2, 4, headWidth + 4, 1, PALETTE.hatVillagerDark);
+    canvas.fillRect(headX - 2, 4, headWidth + 4, 1, palette.hatDark);
     canvas.fillRect(headX, 0, headWidth, 3, palette.hat);
   }
 

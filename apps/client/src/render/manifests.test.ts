@@ -1,3 +1,4 @@
+import { createGreenhavenMonsters, createGreenhavenNpcs } from '@project-realm/shared';
 import type { Direction } from '@project-realm/shared';
 import { describe, expect, it } from 'vitest';
 // The generator is the source of truth for what is painted; these imports are its own layout
@@ -74,6 +75,22 @@ describe('sheet manifests', () => {
     expect(SHEETS.objects.ids).toEqual(OBJECT_ORDER);
     expect(SHEETS.actors.ids).toEqual(ACTOR_ORDER);
     expect(SHEETS.effects.ids).toEqual(EFFECT_ORDER);
+  });
+
+  it('includes original actor appearances for every data-driven Greenhaven NPC', () => {
+    const npcs = createGreenhavenNpcs();
+    expect(npcs.map(({ name }) => name)).toEqual(['Village Elder', 'Merchant', 'Guard']);
+    for (const npc of npcs) {
+      expect(SHEETS.actors.ids).toContain(npc.sprite);
+    }
+  });
+
+  it('includes an original actor appearance for every Greenhaven monster family', () => {
+    const monsters = createGreenhavenMonsters();
+    expect(monsters.map(({ name }) => name)).toEqual(['Forest Slime', 'Wild Boar', 'Thorn Wolf']);
+    for (const monster of monsters) {
+      expect(SHEETS.actors.ids).toContain(monster.sprite);
+    }
   });
 
   it('declares the frame sizes and counts the generator uses', () => {

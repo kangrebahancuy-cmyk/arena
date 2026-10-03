@@ -1,4 +1,4 @@
-import type { CameraState, Direction, Position } from '@project-realm/shared';
+import type { CameraState, Direction, Position, TileId } from '@project-realm/shared';
 
 /**
  * The scene the renderer draws, described as data, plus the commands that change it.
@@ -13,9 +13,11 @@ import type { CameraState, Direction, Position } from '@project-realm/shared';
 /** Draw order. Every layer is drawn in this order, and later phases slot into it without renumbering. */
 export const RENDER_LAYERS = [
   'ground',
+  'decoration',
   'objects',
   'characters',
   'npcs',
+  'monsters',
   'effects',
   'world-ui',
 ] as const;
@@ -25,17 +27,17 @@ export type RenderLayerId = (typeof RENDER_LAYERS)[number];
 /** A tile layer in world space: one map layer, in pixels, ready to draw. */
 export interface TileLayerState {
   readonly id: string;
+  /** Which world draw-order group this tilemap layer belongs to. */
+  readonly role: 'ground' | 'decoration';
   /**
-   * `row * columns + column`; -1 draws nothing.
+   * `row * columns + column`; null draws nothing.
    *
-   * Mutable on purpose: the session owns the map data, keeps one array per layer for the whole
-   * session, and edits it through `tiles-changed` patches (fog reveal, later map edits). The renderer
-   * is a reader - it patches the tiles it is told about and never resizes the array.
+   * Mutable on purpose: the session owns the map data and can edit it through `tiles-changed`
+   * patches. Map tile IDs remain semantic until the renderer maps them to atlas frames.
    */
-  readonly tiles: number[];
+  readonly tiles: (TileId | null)[];
   readonly columns: number;
   readonly rows: number;
-  /** Which tile sheet frame each index uses (see `manifests.ts`). */
   readonly sheet: 'tileset';
 }
 
@@ -43,12 +45,12 @@ export interface ObjectState {
   readonly id: string;
   readonly sprite: string;
   readonly layer: 'objects';
-  /** Tile the object stands on; the sprite is bottom-anchored to it. */
-  readonly column: number;
-  readonly row: number;
+  /** Tile-space bottom-centre anchor; sprite dimensions stay a rendering concern. */
+  readonly position: Position;
 }
 
-export type ActorLayer = 'characters' | 'npcs';
+export type ActorLayer = 'characters' | 'npcs' | 'monsters';
+export type ActorAnimationState = 'idle' | 'walk' | 'attack' | 'hurt' | 'dead';
 
 export interface ActorState {
   readonly id: string;
@@ -59,6 +61,7 @@ export interface ActorState {
   readonly position: Position;
   readonly facing: Direction;
   readonly moving: boolean;
+  readonly animationState: ActorAnimationState;
   /** Optional name shown above the actor on the world-ui layer. */
   readonly name?: string | undefined;
 }
@@ -119,7 +122,7 @@ export type RenderCommand =
       readonly changes: readonly {
         readonly column: number;
         readonly row: number;
-        readonly index: number;
+        readonly tileId: TileId | null;
       }[];
     }
   | { readonly type: 'object-added'; readonly object: ObjectState }

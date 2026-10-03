@@ -2,7 +2,7 @@
   "name": "@project-realm/client",
   "version": "0.1.0",
   "private": true,
-  "description": "Browser client: GameClient entry point, layered architecture, logging and error handling; renderer (Phase 2), input, game state and realtime networking follow.",
+  "description": "Browser client: GameClient entry point, layered architecture, 2D renderer and local Phase 3 movement; authoritative realtime networking follows.",
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {

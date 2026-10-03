@@ -16,7 +16,7 @@ import tseslint from 'typescript-eslint';
  *
  * Layering INSIDE each app uses the same mechanism. A layer may import only from layers to its right:
  *
- *   client:  main -> game -> ui -> boot -> render -> net -> core   (config and shared are usable anywhere)
+ *   client:  main -> game -> ui / input -> boot / render -> net -> core   (config/shared are usable anywhere)
  *   server:  main -> game -> http -> config | core | ports
  *
  * "game" holds the entry points (GameClient / GameServer): they may use everything below them, and
@@ -153,13 +153,44 @@ export default defineConfig(
     },
   },
   {
+    // Input is an independent leaf: it turns DOM events into shared movement intent and knows no game,
+    // UI, renderer, collision or networking implementation.
+    files: ['apps/client/src/input/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...CLIENT_BASE,
+            mayNotImport('input', ['net', 'boot', 'render', 'ui', 'physics', 'game']),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Physics only receives world-space positions and grid queries; it cannot depend on gameplay/UI.
+    files: ['apps/client/src/physics/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...CLIENT_BASE,
+            mayNotImport('physics', ['net', 'boot', 'render', 'ui', 'input', 'game']),
+          ],
+        },
+      ],
+    },
+  },
+  {
     // The UI layer may describe what it shows (including renderer types such as asset progress), but
     // it must never drive the game: data flows in through methods, actions flow out through callbacks.
     files: ['apps/client/src/ui/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['net', 'game'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['net', 'input', 'game'])] },
       ],
     },
   },

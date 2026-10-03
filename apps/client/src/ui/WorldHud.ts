@@ -12,6 +12,7 @@ import { el } from './dom';
  */
 export interface WorldHudModel {
   readonly zone: string;
+  readonly area: string;
   readonly backend: string;
   readonly fps: number;
   readonly deltaMs: number;
@@ -22,8 +23,10 @@ export interface WorldHudModel {
   readonly player: {
     readonly column: number;
     readonly row: number;
-    readonly facing: string;
-    readonly moving: boolean;
+    readonly direction: string;
+    readonly movementState: string;
+    readonly speed: number;
+    readonly animationState: string;
   };
   readonly visible: {
     readonly tiles: number;
@@ -38,6 +41,9 @@ export interface WorldHudModel {
   };
   readonly pixelated: boolean;
   readonly intent: string;
+  readonly nearbyNpc: string;
+  readonly playerHealth: string;
+  readonly monsters: string;
 }
 
 /** One row of the HUD: a stable label and a value that is updated in place. */
@@ -65,6 +71,7 @@ export class WorldHud {
 
     const list = el('dl', { class: 'hud__list' });
     this.addRow(list, 'Zone', (model) => model.zone);
+    this.addRow(list, 'Area', (model) => model.area);
     this.addRow(list, 'Renderer', (model) => model.backend);
     this.addRow(list, 'FPS', (model) => formatNumber(model.fps, 1));
     this.addRow(list, 'Frame delta', (model) => `${formatNumber(model.deltaMs, 2)} ms`);
@@ -80,9 +87,12 @@ export class WorldHud {
       list,
       'Player',
       (model) =>
-        `${model.player.column}, ${model.player.row} · ${model.player.facing}${model.player.moving ? ' (walking)' : ''}`,
+        `${model.player.column}, ${model.player.row} · ${model.player.direction} · ${model.player.movementState} · ${formatNumber(model.player.speed, 1)} tiles/s · ${model.player.animationState}`,
     );
     this.addRow(list, 'Input', (model) => model.intent);
+    this.addRow(list, 'Nearby NPC', (model) => model.nearbyNpc);
+    this.addRow(list, 'Health', (model) => model.playerHealth);
+    this.addRow(list, 'Monsters', (model) => model.monsters);
     this.addRow(
       list,
       'Visible',
@@ -104,7 +114,7 @@ export class WorldHud {
       el(
         'p',
         { class: 'hud__hint' },
-        'WASD / arrows to walk · + and - zoom · 0 reset zoom · P pixel scaling · F3 hide this panel',
+        'WASD / arrows to walk · Space attack · E talk · Esc close · + / - zoom · F3 HUD',
       ),
     );
   }

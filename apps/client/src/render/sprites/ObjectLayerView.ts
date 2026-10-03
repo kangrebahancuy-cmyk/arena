@@ -38,9 +38,9 @@ export class ObjectLayerView extends Container {
       anchor: { x: 0.5, y: 1 },
       roundPixels: true,
     });
-    // Bottom-centre of the tile the object stands on.
-    const x = (state.column + 0.5) * TILE_SIZE;
-    const y = (state.row + 1) * TILE_SIZE;
+    // Map data gives the bottom-centre anchor; sprite size and its atlas frame stay renderer concerns.
+    const x = state.position.x * TILE_SIZE;
+    const y = state.position.y * TILE_SIZE;
     sprite.position.set(x, y);
     sprite.zIndex = y;
     this.sprites.set(state.id, sprite);

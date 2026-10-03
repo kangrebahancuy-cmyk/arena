@@ -45,6 +45,16 @@ afterEach(async () => {
 });
 
 describe('GameServer', () => {
+  it('loads the shared validated world before opening its HTTP listener', () => {
+    const server = new GameServer({ config: testConfig(), version: '9.9.9-test' });
+    const world = server.getWorldMap();
+    const playerSpawn = world.map.spawnPoints.find((spawn) => spawn.kind === 'player');
+
+    expect(world.map.id).toBe('greenhaven');
+    expect(playerSpawn).toBeDefined();
+    expect(playerSpawn && world.canOccupy(playerSpawn.position)).toBe(true);
+  });
+
   it('starts with the documented lifecycle and binds a real socket', async () => {
     const server = new GameServer({ config: testConfig(), version: '9.9.9-test' });
 
