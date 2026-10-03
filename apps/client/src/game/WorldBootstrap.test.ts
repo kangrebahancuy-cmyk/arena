@@ -117,7 +117,7 @@ describe('startWorld', () => {
     vi.advanceTimersByTime(200);
 
     const text = container.querySelector('.hud')?.textContent ?? '';
-    expect(text).toContain('Greenfield');
+    expect(text).toContain('Greenhaven');
     expect(text).toContain('fake');
 
     handle.stop();
@@ -137,6 +137,13 @@ describe('startWorld', () => {
 
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }));
     expect(handle.stage.currentIntent).toEqual({ moving: false, direction: 'east' });
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' }));
+    expect(handle.stage.dialogue?.npcName).toBe('Village Elder');
+    expect(container.querySelector<HTMLElement>('.dialogue')?.hidden).toBe(false);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(handle.stage.dialogue).toBeNull();
+    expect(container.querySelector<HTMLElement>('.dialogue')?.hidden).toBe(true);
 
     handle.stop();
   });

@@ -12,8 +12,10 @@ import { RealmError } from '../errors/RealmError';
  *
  * Consumption status (do not silently pretend otherwise):
  *   - `protocolVersion`  — used today: the client compares it with the server's `/api/health` answer.
- *   - `simulation.hz`, `simulation.maxCatchUpSteps` — the fixed timestep contract. Nothing steps yet:
- *     the renderer loop arrives in Phase 2 and the authoritative server tick in Phase 10.
+ *   - `simulation.hz`, `simulation.maxCatchUpSteps` — the fixed timestep contract used by the local
+ *     simulation today and the authoritative server tick in Phase 10.
+ *   - `movement.playerSpeedTilesPerSecond` — deterministic player speed shared by the local
+ *     controller and the future authoritative simulation.
  */
 export const GameConfigSchema = z.object({
   /** Wire-compatibility version. Mirrors PROTOCOL_VERSION; see that constant before changing it. */
@@ -27,6 +29,10 @@ export const GameConfigSchema = z.object({
      * the classic "spiral of death".
      */
     maxCatchUpSteps: z.number().int().min(1).max(60),
+  }),
+  movement: z.object({
+    /** Player speed in world tiles per second, shared by deterministic movement simulations. */
+    playerSpeedTilesPerSecond: z.number().positive().max(20),
   }),
 });
 
@@ -42,6 +48,7 @@ export type SimulationConfig = GameConfig['simulation'];
 export const DEFAULT_GAME_CONFIG: GameConfig = Object.freeze({
   protocolVersion: PROTOCOL_VERSION,
   simulation: Object.freeze({ hz: 20, maxCatchUpSteps: 5 }),
+  movement: Object.freeze({ playerSpeedTilesPerSecond: 4.2 }),
 });
 
 /** Partial overrides, e.g. from environment variables. Everything left out falls back to the defaults. */
@@ -51,6 +58,11 @@ export interface GameConfigOverrides {
     | {
         readonly hz?: number | undefined;
         readonly maxCatchUpSteps?: number | undefined;
+      }
+    | undefined;
+  readonly movement?:
+    | {
+        readonly playerSpeedTilesPerSecond?: number | undefined;
       }
     | undefined;
 }
@@ -65,6 +77,7 @@ export function createGameConfig(overrides: GameConfigOverrides = {}): GameConfi
   const candidate = {
     protocolVersion: overrides.protocolVersion ?? DEFAULT_GAME_CONFIG.protocolVersion,
     simulation: { ...DEFAULT_GAME_CONFIG.simulation, ...overrides.simulation },
+    movement: { ...DEFAULT_GAME_CONFIG.movement, ...overrides.movement },
   };
 
   const parsed = GameConfigSchema.safeParse(candidate);
@@ -81,6 +94,9 @@ export function createGameConfig(overrides: GameConfigOverrides = {}): GameConfi
     simulation: Object.freeze({
       hz: parsed.data.simulation.hz,
       maxCatchUpSteps: parsed.data.simulation.maxCatchUpSteps,
+    }),
+    movement: Object.freeze({
+      playerSpeedTilesPerSecond: parsed.data.movement.playerSpeedTilesPerSecond,
     }),
   });
 }

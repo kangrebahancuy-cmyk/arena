@@ -7,6 +7,7 @@ import {
 import type {
   CameraState,
   CameraViewport,
+  MapBoundary,
   Position,
   TileRange,
   WorldBounds,
@@ -111,16 +112,23 @@ export class Camera {
    * When the map is smaller than the viewport on an axis, it is centred on that axis instead.
    */
   clampToMap(columns: number, rows: number, tileSize: number, marginTiles = 2): void {
+    this.clampToBounds({ x: 0, y: 0, width: columns, height: rows }, tileSize, marginTiles);
+  }
+
+  /** Keeps the viewport within an explicit map boundary (right/bottom edges are exclusive). */
+  clampToBounds(bounds: MapBoundary, tileSize: number, marginTiles = 0): void {
     const halfWidth = this.viewport.width / (2 * this.state.zoom);
     const halfHeight = this.viewport.height / (2 * this.state.zoom);
-    const mapWidth = columns * tileSize;
-    const mapHeight = rows * tileSize;
     const margin = marginTiles * tileSize;
+    const left = bounds.x * tileSize;
+    const top = bounds.y * tileSize;
+    const width = bounds.width * tileSize;
+    const height = bounds.height * tileSize;
 
     this.state = {
       ...this.state,
-      x: clampAxis(this.state.x, mapWidth, halfWidth, margin),
-      y: clampAxis(this.state.y, mapHeight, halfHeight, margin),
+      x: clampAxis(this.state.x, left, width, halfWidth, margin),
+      y: clampAxis(this.state.y, top, height, halfHeight, margin),
     };
   }
 
@@ -150,8 +158,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function clampAxis(value: number, mapSize: number, halfViewport: number, margin: number): number {
-  const min = Math.min(halfViewport - margin, mapSize / 2);
-  const max = Math.max(mapSize - halfViewport + margin, mapSize / 2);
+function clampAxis(
+  value: number,
+  origin: number,
+  mapSize: number,
+  halfViewport: number,
+  margin: number,
+): number {
+  const mapCentre = origin + mapSize / 2;
+  const min = Math.min(origin + halfViewport - margin, mapCentre);
+  const max = Math.max(origin + mapSize - halfViewport + margin, mapCentre);
   return clamp(value, min, max);
 }

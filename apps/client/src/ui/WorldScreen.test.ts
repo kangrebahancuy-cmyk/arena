@@ -9,12 +9,18 @@ function actions() {
     onZoomOut: vi.fn(),
     onResetZoom: vi.fn(),
     onTogglePixelated: vi.fn(),
+    onInteract: vi.fn(),
+    onAttack: vi.fn(),
+    onAdvanceDialogue: vi.fn(),
+    onChooseDialogueChoice: vi.fn(),
+    onCloseDialogue: vi.fn(),
   };
 }
 
 function model(overrides: Partial<WorldHudModel> = {}): WorldHudModel {
   return {
-    zone: 'Greenfield',
+    zone: 'Greenhaven',
+    area: 'Greenhaven Village',
     backend: 'webgl',
     fps: 60.5,
     deltaMs: 16.6,
@@ -22,11 +28,21 @@ function model(overrides: Partial<WorldHudModel> = {}): WorldHudModel {
     steps: 120,
     droppedSeconds: 0,
     camera: { x: 512, y: 328, zoom: 3 },
-    player: { column: 32, row: 20, facing: 'east', moving: true },
+    player: {
+      column: 32,
+      row: 20,
+      direction: 'east',
+      movementState: 'moving',
+      speed: 4.2,
+      animationState: 'walk',
+    },
     visible: { tiles: 420, objects: 12, actors: 3, effects: 2 },
     viewport: { width: 1280, height: 720, resolution: 2 },
     pixelated: true,
     intent: 'held: east',
+    nearbyNpc: 'None',
+    playerHealth: '100/100 HP',
+    monsters: '3/3 active',
     ...overrides,
   };
 }
@@ -48,11 +64,11 @@ describe('WorldScreen', () => {
     expect(root.childElementCount).toBe(0);
   });
 
-  it('says plainly that this is a prototype with placeholder art', () => {
+  it('says plainly that this is a local prototype with original generated art', () => {
     const { view } = screen();
     const notice = view.element.querySelector('.world__notice');
     expect(notice?.textContent).toMatch(/prototype/i);
-    expect(notice?.textContent).toMatch(/scripts\/assets/);
+    expect(notice?.textContent).toMatch(/original generated art/i);
   });
 
   it('shows real asset progress while loading', () => {
@@ -69,7 +85,7 @@ describe('WorldScreen', () => {
 
   it('hides the overlay once the world is ready, and reports the real backend', () => {
     const { view } = screen();
-    view.setReady({ backend: 'webgl', zone: 'Greenfield', simulationHz: 30 });
+    view.setReady({ backend: 'webgl', zone: 'Greenhaven', simulationHz: 30 });
 
     const overlay = view.element.querySelector('.world__overlay');
     expect(overlay?.classList.contains('world__overlay--hidden')).toBe(true);
@@ -93,14 +109,16 @@ describe('WorldScreen', () => {
     view.update(model());
     const text = view.element.querySelector('.hud')?.textContent ?? '';
 
-    expect(text).toContain('Greenfield');
+    expect(text).toContain('Greenhaven');
     expect(text).toContain('webgl');
     expect(text).toContain('60.5');
     expect(text).toContain('16.60 ms');
     expect(text).toContain('512, 328 px');
-    expect(text).toContain('32, 20 · east (walking)');
+    expect(text).toContain('32, 20 · east · moving · 4.2 tiles/s · walk');
     expect(text).toContain('420 tiles');
     expect(text).toContain('nearest (crisp)');
+    expect(text).toContain('100/100 HP');
+    expect(text).toContain('3/3 active');
 
     view.update(model({ fps: Number.NaN, droppedSeconds: Number.POSITIVE_INFINITY }));
     const updated = view.element.querySelector('.hud')?.textContent ?? '';
@@ -111,7 +129,78 @@ describe('WorldScreen', () => {
     const { view } = screen();
     const hint = view.element.querySelector('.hud__hint')?.textContent ?? '';
     expect(hint).toContain('WASD');
+    expect(hint).toContain('Space attack');
     expect(hint).toContain('zoom');
+  });
+
+  it('shows a nearby-NPC prompt, then renders data-driven dialogue choices', () => {
+    const root = document.createElement('div');
+    const handlers = actions();
+    const view = new WorldScreen(root, handlers);
+    view.updateInteraction({
+      id: 'npc-merchant',
+      name: 'Merchant',
+      type: 'merchant',
+      distance: 1,
+      interactionRadius: 2.5,
+    });
+
+    const prompt = view.element.querySelector('.world__interaction') as HTMLElement;
+    expect(prompt.hidden).toBe(false);
+    expect(prompt.textContent).toContain('Merchant');
+
+    view.updateDialogue({
+      npcId: 'npc-merchant',
+      npcName: 'Merchant',
+      npcType: 'merchant',
+      nodeId: 'greeting',
+      text: 'A fresh road brings fresh stories.',
+      choices: [{ id: 'ask-road', label: 'Any advice for the road?' }],
+      canContinue: false,
+    });
+
+    const panel = view.element.querySelector('.dialogue') as HTMLElement;
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector('.dialogue__message')?.textContent).toBe(
+      'A fresh road brings fresh stories.',
+    );
+    expect(panel.querySelector('.dialogue__choice')?.textContent).toBe('Any advice for the road?');
+    expect(prompt.hidden).toBe(true);
+    panel.querySelector<HTMLButtonElement>('.dialogue__choice')?.click();
+    expect(handlers.onChooseDialogueChoice).toHaveBeenCalledWith('ask-road');
+
+    view.destroy();
+  });
+
+  it('calls back on keyboard-friendly dialogue actions and the mobile talk button', () => {
+    const root = document.createElement('div');
+    const handlers = actions();
+    const view = new WorldScreen(root, handlers);
+    view.updateInteraction({
+      id: 'npc-elder',
+      name: 'Village Elder',
+      type: 'quest_giver',
+      distance: 1,
+      interactionRadius: 2.25,
+    });
+    view.element.querySelector<HTMLButtonElement>('.world__interaction button')?.click();
+    expect(handlers.onInteract).toHaveBeenCalledTimes(1);
+
+    view.updateDialogue({
+      npcId: 'npc-elder',
+      npcName: 'Village Elder',
+      npcType: 'quest_giver',
+      nodeId: 'elder-story',
+      text: 'Every path begins with a step.',
+      choices: [],
+      canContinue: true,
+    });
+    view.element.querySelector<HTMLButtonElement>('.dialogue__continue')?.click();
+    expect(handlers.onAdvanceDialogue).toHaveBeenCalledTimes(1);
+    view.element.querySelector<HTMLButtonElement>('.dialogue__close')?.click();
+    expect(handlers.onCloseDialogue).toHaveBeenCalledTimes(1);
+
+    view.destroy();
   });
 
   it('toggles the HUD on request', () => {
@@ -140,6 +229,7 @@ describe('WorldScreen', () => {
       ['Zoom out', handlers.onZoomOut],
       ['Reset zoom', handlers.onResetZoom],
       ['Pixel scaling', handlers.onTogglePixelated],
+      ['Attack', handlers.onAttack],
     ] as const) {
       const button = [...root.querySelectorAll('button')].find(
         (candidate) => candidate.textContent === label,

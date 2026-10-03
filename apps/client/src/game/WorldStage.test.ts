@@ -136,13 +136,29 @@ describe('WorldStage', () => {
     stage.tick(1 / GAME.simulation.hz);
 
     const hud = stage.hud;
-    expect(hud.zone).toBe('Greenfield');
+    expect(hud.zone).toBe('Greenhaven');
+    expect(hud.area).toBe('Greenhaven Village');
     expect(hud.backend).toBe('fake');
     expect(hud.simulationHz).toBe(GAME.simulation.hz);
     expect(hud.steps).toBeGreaterThan(0);
-    expect(hud.player.row).toBe(20);
+    expect(hud.player.row).toBe(33);
+    expect(hud.playerHealth).toBe('100/100 HP');
+    expect(hud.monsters).toBe('3/3 active');
+    expect(stage.attackNearestMonster()).toEqual({ status: 'out-of-range' });
     expect(hud.visible.tiles).toBe(0);
     expect(hud.viewport).toEqual({ width: 800, height: 600, resolution: 1 });
+  });
+
+  it('exposes nearby NPC and dialogue state through the game stage', async () => {
+    const { stage } = await startedStage();
+
+    expect(stage.nearbyNpc?.name).toBe('Village Elder');
+    expect(stage.hud.nearbyNpc).toBe('Village Elder');
+    expect(stage.interact()).toBe(true);
+    expect(stage.dialogue?.npcName).toBe('Village Elder');
+    expect(stage.chooseDialogueChoice('elder-leave')).toBe(true);
+    expect(stage.dialogue).toBeNull();
+    expect(stage.closeDialogue()).toBe(false);
   });
 
   it('resizes the renderer and the camera together when the window changes', async () => {
@@ -159,7 +175,7 @@ describe('WorldStage', () => {
     // The scene survives a resize: the same player and objects are still there, and the next frame
     // draws without re-sending the whole world.
     stage.tick(1 / 60);
-    expect(stage.hud.zone).toBe('Greenfield');
+    expect(stage.hud.zone).toBe('Greenhaven');
   });
 
   it('zooms in whole steps within the limits, and resets to the screen-appropriate zoom', async () => {
@@ -208,8 +224,10 @@ describe('WorldStage', () => {
 
     expect(stage.currentIntent).toEqual({ moving: true, direction: 'east' });
     expect(stage.hud.steps).toBe(steps);
-    expect(stage.hud.player.facing).toBe('east');
-    expect(stage.hud.player.moving).toBe(true);
+    expect(stage.hud.player.direction).toBe('east');
+    expect(stage.hud.player.movementState).toBe('moving');
+    expect(stage.hud.player.animationState).toBe('walk');
+    expect(stage.hud.player.speed).toBe(GAME.movement.playerSpeedTilesPerSecond);
   });
 
   it('pauses and resumes the loop', async () => {

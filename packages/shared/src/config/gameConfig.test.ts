@@ -19,10 +19,14 @@ describe('createGameConfig', () => {
   });
 
   it('applies partial overrides one field at a time', () => {
-    const config = createGameConfig({ simulation: { hz: 30 } });
+    const config = createGameConfig({
+      simulation: { hz: 30 },
+      movement: { playerSpeedTilesPerSecond: 5 },
+    });
 
     expect(config.simulation.hz).toBe(30);
     expect(config.simulation.maxCatchUpSteps).toBe(DEFAULT_GAME_CONFIG.simulation.maxCatchUpSteps);
+    expect(config.movement.playerSpeedTilesPerSecond).toBe(5);
     expect(config.protocolVersion).toBe(PROTOCOL_VERSION);
   });
 
@@ -31,18 +35,21 @@ describe('createGameConfig', () => {
 
     expect(Object.isFrozen(config)).toBe(true);
     expect(Object.isFrozen(config.simulation)).toBe(true);
+    expect(Object.isFrozen(config.movement)).toBe(true);
   });
 
   it.each([
     ['a zero simulation rate', { simulation: { hz: 0 } }],
     ['an absurd simulation rate', { simulation: { hz: 1_000 } }],
     ['a fractional catch-up bound', { simulation: { maxCatchUpSteps: 1.5 } }],
+    ['a zero player speed', { movement: { playerSpeedTilesPerSecond: 0 } }],
+    ['an excessive player speed', { movement: { playerSpeedTilesPerSecond: 21 } }],
     ['a negative protocol version', { protocolVersion: -1 }],
   ])('rejects %s with a named field', (_label, overrides) => {
     const act = () => createGameConfig(overrides);
 
     expect(act).toThrow(RealmError);
-    expect(act).toThrow(/simulation|protocolVersion/);
+    expect(act).toThrow(/simulation|movement|protocolVersion/);
     expect(act).toThrow(expect.objectContaining({ code: 'config_invalid' }));
   });
 });

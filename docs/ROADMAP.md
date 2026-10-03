@@ -12,24 +12,24 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 
 ## Ringkasan
 
-| Fase | Judul                          | Status        |
-| ---- | ------------------------------ | ------------- |
-| 1    | Fondasi proyek                 | **Selesai**   |
-| 1.5  | Fondasi arsitektur             | **Selesai**   |
-| 2    | Rendering 2D                   | **Selesai**   |
-| 3    | Pergerakan pemain              | Belum dimulai |
-| 4    | Dunia, peta, dan tabrakan      | Belum dimulai |
-| 5    | NPC dan monster                | Belum dimulai |
-| 6    | Pertarungan                    | Belum dimulai |
-| 7    | Inventori, item, dan equipment | Belum dimulai |
-| 8    | Progresi karakter              | Belum dimulai |
-| 9    | Sistem quest                   | Belum dimulai |
-| 10   | Multiplayer WebSocket          | Belum dimulai |
-| 11   | Autentikasi dan basis data     | Belum dimulai |
-| 12   | Dunia persisten                | Belum dimulai |
-| 13   | Chat dan fitur sosial          | Belum dimulai |
-| 14   | Optimasi dan keamanan          | Belum dimulai |
-| 15   | Deployment                     | Belum dimulai |
+| Fase | Judul                          | Status                                                                                |
+| ---- | ------------------------------ | ------------------------------------------------------------------------------------- |
+| 1    | Fondasi proyek                 | **Selesai**                                                                           |
+| 1.5  | Fondasi arsitektur             | **Selesai**                                                                           |
+| 2    | Rendering 2D                   | **Selesai**                                                                           |
+| 3    | Pergerakan pemain              | **Selesai**                                                                           |
+| 4    | Dunia, peta, dan tabrakan      | **Selesai**                                                                           |
+| 5    | NPC dan monster                | Prototipe NPC + monster lokal selesai; AI/simulasi server-authoritative belum dimulai |
+| 6    | Pertarungan                    | Belum dimulai                                                                         |
+| 7    | Inventori, item, dan equipment | Belum dimulai                                                                         |
+| 8    | Progresi karakter              | Belum dimulai                                                                         |
+| 9    | Sistem quest                   | Belum dimulai                                                                         |
+| 10   | Multiplayer WebSocket          | Belum dimulai                                                                         |
+| 11   | Autentikasi dan basis data     | Belum dimulai                                                                         |
+| 12   | Dunia persisten                | Belum dimulai                                                                         |
+| 13   | Chat dan fitur sosial          | Belum dimulai                                                                         |
+| 14   | Optimasi dan keamanan          | Belum dimulai                                                                         |
+| 15   | Deployment                     | Belum dimulai                                                                         |
 
 ## Fase 1: Fondasi proyek (selesai)
 
@@ -108,22 +108,35 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 
 **Catatan verifikasi:** tidak ada browser di sandbox pengembangan, jadi penerimaan di browser (dunia benar-benar terlihat, kamera terasa mengikuti, resize aman) dikonfirmasi pemilik proyek dengan membuka `npm run dev`; tes otomatis berbasis browser tetap ditunda.
 
-## Fase 3: Pergerakan pemain
+## Fase 3: Pergerakan pemain (selesai)
 
-- **Isi:** sistem input (keyboard, sentuhan: joystick virtual atau ketuk-untuk-bergerak); intent gerak; fungsi langkah gerak yang deterministik di `packages/shared`.
-- **Ketegangan desain yang harus dijawab saat fase ini dimulai:** gerak dibangun **sebelum** jaringan (Fase 10), padahal server harus menjadi otoritas. Dua jalan: (a) gerak lokal yang diberi label jelas sebagai simulasi lokal tanpa server, lalu diganti oleh jawaban server di Fase 10, atau (b) menarik kerangka WebSocket minimal lebih awal. Kedua opsi menjaga aturan "tidak ada data palsu" selama UI menyatakan dengan jujur bahwa tidak ada koneksi.
-- **Selesai bila:** avatar bergerak di desktop dan ponsel lewat intent, dan logika gerak dites.
+- **Pilihan desain:** gerak lokal/offline yang dinyatakan jelas di layar; tidak menarik WebSocket lebih awal. Server tetap otoritas saat fase jaringan tiba.
+- **Arah gerak:** empat arah kardinal, sesuai kontrak `Direction` dan empat baris sprite yang sudah dipakai renderer. Tombol WASD dan panah tersedia di desktop; D-pad sentuh yang sudah ada memakai intent yang sama. Arah yang paling baru ditekan aktif; melepasnya kembali ke tombol lain yang masih ditahan.
+- **Pemisahan modul:** `input/InputController.ts` hanya mengubah event keyboard/touch menjadi `MoveIntent`; `game/PlayerController.ts` memiliki state pemain dan menerapkan intent; `shared/simulation/movement.ts` menghitung langkah posisi deterministik; `physics/Collision.ts` memeriksa posisi terhadap grid tanpa mengetahui detail controller atau renderer. `WorldSession` mengorkestrasi modul-modul tersebut dan mengirim state ke scene.
+- **State pemain lokal:** `id`, `position`, `direction`, `movementState` (`idle`/`moving`), `speed` (4,2 tile/detik dari `GameConfig`) dan `animationState` (`idle`/`walk`). Posisi simulasi memakai fixed timestep 20 Hz; scene menginterpolasi antar-langkah untuk gambar yang stabil. Tanpa akselerasi/decelerasi: kecepatan konstan saat tombol ditahan, lalu berhenti pada langkah simulasi berikutnya setelah dilepas.
+- **Tabrakan:** resolver tile-grid memeriksa area badan empat sudut, batas peta, dan menyapu langkah besar agar tidak menembus tile terhalang. Ini adapter minimal untuk dunia prototipe yang ada, bukan sistem format peta/tabrakan penuh (tetap Fase 4).
+- **Tidak dikerjakan:** multiplayer, combat, akun/basis data, perubahan dunia/peta, atau fitur fase berikutnya.
+- **Bukti:** `npm run check` hijau (**371 tes**: klien 188, server 45, shared 138); `npm run build` hijau untuk server dan klien. Tes `InputController`, `PlayerController`, fungsi gerak shared, `TileCollision`, `WorldSession` (gerak, stop, animasi, kamera, interpolasi, tabrakan) dan `WorldStage` mencakup jalur ini. Browser nyata tidak tersedia untuk verifikasi visual di sandbox; Playwright tetap ditunda.
 
-## Fase 4: Dunia, peta, dan tabrakan
+## Fase 4: Dunia, peta, dan tabrakan (selesai)
 
-- **Isi:** format peta tervalidasi zod; lapisan tile; lapisan tabrakan; batas peta; titik spawn; beberapa area dan perpindahan antar area.
-- **Server:** memuat peta yang sama dan memvalidasi gerak terhadap tabrakan.
-- **Perlu diputuskan:** format peta (JSON gaya Tiled atau format sendiri).
+- **Format dipilih:** format data sendiri yang JSON-friendly dan divalidasi zod di `packages/shared/src/protocol/world.ts`. Map menyimpan tile ID semantik (bukan nomor atlas), `TileData`, boundary, named areas, spawn points, tile layers, collision mask, object layer dan object colliders. Data yang lolos validasi punya ukuran grid konsisten dan referensi tile/area yang sah.
+- **Map awal:** `Greenhaven` (`72x48`) ada sebagai world data bersama di `packages/shared/src/world/maps/greenhaven.ts`; map orisinal berisi Heartwood Grove, Bracken Meadow, Old Quarry, Moonmere Shore, Greenhaven Village, dan South Fields. Ada spawn pemain di village square dan titik spawn transisi bernama untuk akses/validasi lokasi.
+- **Lapisan:** ground dan decoration menjadi scene tilemap yang diculling per chunk; collision layer tidak dikirim ke renderer; objects dirakit dari object-layer data. PixiJS hanya menerima scene data dan memetakan tile ID ke manifest aset—isi Greenhaven tidak di-hardcode di renderer.
+- **Collision:** `TileCollision` membaca properti blokir tile (air dan stone wall), collision mask, object collider (rocks/cottages), dan map bounds. Gerak disapu dalam langkah kecil sehingga tidak menembus rintangan; kamera dibatasi ke boundary yang sama.
+- **Area:** posisi pemain memilih area terdekat dan namanya ditampilkan di HUD; saat pemain berjalan melintasi area, HUD ikut berubah tanpa perpindahan ke map lain.
+- **Server:** `GameServer` memuat dan memvalidasi Greenhaven dari paket shared saat startup. `ServerWorldMap` memakai `TileCollision` shared yang sama dengan klien untuk memeriksa posisi dan menyapu requested movement terhadap tile, collision mask, object collider, serta map bounds.
+- **Batas scope saat Fase 4 ditutup:** server menyediakan map dan collision validator, tetapi belum menerima intent jaringan, mengelola player state, atau menjalankan world tick; otoritas gerak multiplayer tetap Fase 10. Format collision saat ini untuk objek statis; saat penutupan Fase 4, pekerjaan NPC, combat, database, dan fase berikutnya belum dimulai.
+- **Bukti:** `npm run check` hijau (**390 tes**: klien 192, server 50, shared 148); `npm run build` hijau. Tes mencakup validasi schema, server load map dan gerak, tile/object collision, bounds, spawn, area lookup, camera clamp, multi-layer scene dan movement. Live preview tersedia; browser visual belum diverifikasi otomatis di sandbox.
 
 ## Fase 5: NPC dan monster
 
-- **Isi:** model entitas; AI di sisi server; spawner dan waktu respawn; data dialog NPC.
-- **Selesai bila:** monster dan NPC tampil dari data server dan bergerak sesuai aturan server.
+- **Prototipe NPC yang sudah dibangun:** NPC Greenhaven lokal dan data-driven untuk Village Elder, Merchant, dan Guard; role `merchant`/`quest_giver`/`generic`; proximity radius, tombol E/Talk, dialogue graph bercabang, dan UI percakapan. Lihat [ARCHITECTURE.md](ARCHITECTURE.md#20-prototipe-interaksi-npc-lokal-slice-fase-5).
+- **Prototipe monster yang sudah dibangun:** Forest Slime, Wild Boar, dan Thorn Wolf adalah monster orisinal dengan spawn, statistik, rute patroli, AI IDLE/PATROL/CHASE/ATTACK, damage, HP/HURT/DEAD, cooldown, respawn, sprite, HUD, dan serangan pemain lewat Space/Attack. Entity, AI, combat, dan spawner terpisah; kontrak/data shared serta sesi/render klien teruji. Lihat [ARCHITECTURE.md](ARCHITECTURE.md#21-sistem-monster-lokal-slice-fase-5).
+- **Scope prototipe ini:** NPC, monster, combat, HUD, dan respawn berjalan lokal di browser. Tidak ada transaksi merchant, quest completion, database, atau persistence; server belum otoritas atas NPC/monster.
+- **Masih terbuka untuk Fase 5 penuh:** entitas dan simulasi monster di server, AI/pathfinding dan aturan spawn/respawn server-authoritative, sinkronisasi state ke klien, serta NPC yang tampil/bergerak dari data server.
+- **Selesai bila:** monster dan NPC tampil dari data server dan bergerak sesuai aturan server; klien hanya mengirim intent dan tidak menentukan hasil AI/combat.
+- **Bukti prototipe lokal (sandbox Linux, Node 22.22.3):** `npm run check` hijau — **427 tes** (klien 219, server 50, shared 158); `npm run build` berhasil untuk server dan klien produksi. Ini memverifikasi slice lokal, bukan kriteria Fase 5 penuh; uji visual browser Windows/nyata belum tercatat.
 
 ## Fase 6: Pertarungan
 

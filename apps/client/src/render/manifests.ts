@@ -38,20 +38,20 @@ export const SHEETS = {
     frameWidth: 16,
     frameHeight: 16,
     layout: 'strip',
-    columns: 6,
+    columns: 8,
     rows: 1,
-    ids: ['grass', 'grass_flowers', 'dirt', 'water', 'stone', 'cloud'],
-    description: 'Ground tiles and the unexplored-world cloud',
+    ids: ['grass', 'grass_flowers', 'dirt', 'water', 'stone', 'cloud', 'stone_wall', 'wood_plank'],
+    description: 'Ground, wall, and bridge tiles',
   },
   objects: {
     file: 'assets/objects.png',
     frameWidth: 32,
     frameHeight: 32,
     layout: 'strip',
-    columns: 4,
+    columns: 5,
     rows: 1,
-    ids: ['tree_broad', 'tree_pine', 'bush', 'rock'],
-    description: 'World objects, bottom-anchored so they can overhang their tile',
+    ids: ['tree_broad', 'tree_pine', 'bush', 'rock', 'cottage'],
+    description: 'Trees, rocks, and Greenhaven buildings, bottom-anchored in the world',
   },
   actors: {
     file: 'assets/actors.png',
@@ -61,7 +61,16 @@ export const SHEETS = {
     // 3 walk frames per appearance block; the blocks sit side by side along the row.
     columns: 3,
     rows: 4,
-    ids: ['player', 'villager'],
+    ids: [
+      'player',
+      'villager',
+      'elder',
+      'merchant',
+      'guard',
+      'forest_slime',
+      'wild_boar',
+      'thorn_wolf',
+    ],
     description: 'Characters and NPCs: 3 frames x 4 facings per appearance',
   },
   effects: {
@@ -156,12 +165,16 @@ export function stripFrame(sheet: SheetKey, id: string, frameIndex = 0): SheetFr
   };
 }
 
-/** Frame `index` of a ground tile. Indices come straight from the map data. */
-export function tileFrame(index: number): SheetFrame | null {
+/** Frame for a semantic map tile ID (or a numeric atlas index used by asset tests). */
+export function tileFrame(tile: string | number | null): SheetFrame | null {
+  if (tile === null) {
+    return null;
+  }
   const definition = SHEETS.tileset;
+  const index =
+    typeof tile === 'string' ? (definition.ids as readonly string[]).indexOf(tile) : tile;
   if (!Number.isInteger(index) || index < 0 || index >= definition.ids.length) {
-    // Unknown index (including -1 = "draw nothing" and NaN): the map schema allows any integer >= -1,
-    // so the renderer must refuse a frame it does not have instead of drawing at NaN.
+    // Unknown IDs/indices (including -1 and NaN) draw nothing rather than sampling a wrong frame.
     return null;
   }
   return {

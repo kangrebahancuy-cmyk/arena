@@ -1,9 +1,9 @@
 import type { Logger } from '@project-realm/shared';
 import type { ClientConfig } from '../config/clientConfig';
 import type { WorldRenderer } from '../render/WorldRenderer';
-import { InputController } from '../ui/InputController';
+import { InputController } from '../input/InputController';
 import { WorldScreen } from '../ui/WorldScreen';
-import { PROTOTYPE_PLAYER_ID, PROTOTYPE_PLAYER_NAME } from './PrototypeWorld';
+import { PROTOTYPE_PLAYER_ID, PROTOTYPE_PLAYER_NAME } from './GreenhavenWorld';
 import { WorldStage } from './WorldStage';
 import type { WorldStageOptions } from './WorldStage';
 
@@ -29,10 +29,10 @@ export interface WorldBootstrapHandle {
 /**
  * Starts the world and connects it to the page.
  *
- * This is the composition root of the rendering phase: the only module that knows the screen (DOM), the
- * stage (renderer + session + loop) and the input controller at the same time. Everything below it
- * stays ignorant of the others - the screen never imports game code, the stage never touches the DOM,
- * and the input controller never hears about the world.
+ * This is the composition root of the local world (Phases 2 and 3): the only module that knows the
+ * screen (DOM), the stage (renderer + player controller + physics + session + loop) and input at the
+ * same time. Everything below it stays ignorant of the others - the screen never imports game code,
+ * the stage never touches the DOM, and the input controller never hears about the world.
  *
  * Order matters and is deliberate: the canvas exists before the renderer, the renderer and its sprite
  * sheets exist before the session draws anything, and the input is bound before the first frame so a
@@ -45,13 +45,40 @@ export async function startWorld(options: WorldBootstrapOptions): Promise<WorldB
   // The screen must exist before the stage (the stage takes over the screen's canvas), while the
   // screen's callbacks need the stage. The holder closes that circle; the buttons cannot be clicked
   // before the world is ready, and `?.` makes that impossible state harmless.
-  const holder: { stage?: WorldStage } = {};
+  const holder: { stage?: WorldStage; syncNpcUi?: () => void } = {};
   const screen = new WorldScreen(root, {
     onZoomIn: () => holder.stage?.zoomBy(1),
     onZoomOut: () => holder.stage?.zoomBy(-1),
     onResetZoom: () => holder.stage?.resetZoom(),
     onTogglePixelated: () => {
       holder.stage?.togglePixelated();
+    },
+    onAttack: () => {
+      holder.stage?.attackNearestMonster();
+    },
+    onInteract: () => {
+      const activeStage = holder.stage;
+      if (activeStage === undefined) {
+        return;
+      }
+      if (activeStage.dialogue === null) {
+        activeStage.interact();
+      } else {
+        activeStage.continueDialogue();
+      }
+      holder.syncNpcUi?.();
+    },
+    onAdvanceDialogue: () => {
+      holder.stage?.continueDialogue();
+      holder.syncNpcUi?.();
+    },
+    onChooseDialogueChoice: (choiceId) => {
+      holder.stage?.chooseDialogueChoice(choiceId);
+      holder.syncNpcUi?.();
+    },
+    onCloseDialogue: () => {
+      holder.stage?.closeDialogue();
+      holder.syncNpcUi?.();
     },
   });
 
@@ -87,19 +114,40 @@ export async function startWorld(options: WorldBootstrapOptions): Promise<WorldB
     onTogglePixelated: () => {
       stage.togglePixelated();
     },
+    onAttack: () => {
+      stage.attackNearestMonster();
+    },
+    onInteract: () => {
+      if (stage.dialogue === null) {
+        stage.interact();
+      } else {
+        stage.continueDialogue();
+      }
+      holder.syncNpcUi?.();
+    },
+    onCancel: () => {
+      stage.closeDialogue();
+      holder.syncNpcUi?.();
+    },
   });
   holder.stage = stage;
+  holder.syncNpcUi = () => {
+    screen.updateInteraction(stage.nearbyNpc);
+    screen.updateDialogue(stage.dialogue);
+  };
   input.attach();
   input.bindDirectionButtons(screen.element);
 
   // HUD refresh on its own timer: the render loop must not do DOM work every frame.
   const hudTimer = setInterval(() => {
     screen.update(stage.hud);
+    holder.syncNpcUi?.();
   }, HUD_INTERVAL_MS);
 
   try {
     const { backend } = await stage.start();
     screen.update(stage.hud);
+    holder.syncNpcUi?.();
     screen.setReady({ backend, zone: stage.hud.zone, simulationHz: config.game.simulation.hz });
     logger.info('world screen ready', { backend });
   } catch (error) {

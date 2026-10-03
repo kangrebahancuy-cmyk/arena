@@ -24,8 +24,13 @@ function fakeWindow() {
   };
 }
 
-function keyEvent(type: 'keydown' | 'keyup', key: string, target?: EventTarget): KeyboardEvent {
-  const event = new KeyboardEvent(type, { key, bubbles: true, cancelable: true });
+function keyEvent(
+  type: 'keydown' | 'keyup',
+  key: string,
+  target?: EventTarget,
+  code = '',
+): KeyboardEvent {
+  const event = new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true });
   if (target !== undefined) {
     Object.defineProperty(event, 'target', { value: target });
   }
@@ -80,10 +85,30 @@ describe('InputController', () => {
     }
 
     // Physical code, as reported by a French keyboard where the key labelled Z is QWERTY's W.
-    target.dispatch('keydown', keyEvent('keydown', 'KeyW'));
+    target.dispatch('keydown', keyEvent('keydown', 'z', undefined, 'KeyW'));
     expect(intents.at(-1)).toEqual({ moving: true, direction: 'north' });
 
     controller.detach();
+  });
+
+  it('keeps a direction held when one of multiple controls for that direction is released', () => {
+    const target = fakeWindow();
+    const intents: MoveIntent[] = [];
+    const controller = new InputController({
+      onIntent: (intent) => intents.push(intent),
+      keyboardTarget: target,
+    });
+    controller.attach();
+
+    target.dispatch('keydown', keyEvent('keydown', 'ArrowUp'));
+    target.dispatch('keydown', keyEvent('keydown', 'w', undefined, 'KeyW'));
+    target.dispatch('keyup', keyEvent('keyup', 'ArrowUp'));
+
+    expect(intents.at(-1)).toEqual({ moving: true, direction: 'north' });
+    expect(controller.state.held).toEqual(['north']);
+
+    controller.detach();
+    expect(intents.at(-1)).toEqual({ moving: false, direction: 'north' });
   });
 
   it('walks the most recently pressed direction while keys are held', () => {
@@ -161,6 +186,36 @@ describe('InputController', () => {
     expect(reset).toHaveBeenCalledTimes(1);
     expect(pixelated).toHaveBeenCalledTimes(1);
 
+    controller.detach();
+  });
+
+  it('routes E to interaction once and Escape to dialogue cancellation', () => {
+    const target = fakeWindow();
+    const interact = vi.fn();
+    const attack = vi.fn();
+    const cancel = vi.fn();
+    const controller = new InputController({
+      onIntent: () => undefined,
+      onInteract: interact,
+      onAttack: attack,
+      onCancel: cancel,
+      keyboardTarget: target,
+    });
+    controller.attach();
+
+    target.dispatch('keydown', keyEvent('keydown', 'e'));
+    const repeat = keyEvent('keydown', 'e');
+    Object.defineProperty(repeat, 'repeat', { value: true });
+    target.dispatch('keydown', repeat);
+    target.dispatch('keydown', keyEvent('keydown', ' ', undefined, 'Space'));
+    const repeatAttack = keyEvent('keydown', ' ', undefined, 'Space');
+    Object.defineProperty(repeatAttack, 'repeat', { value: true });
+    target.dispatch('keydown', repeatAttack);
+    target.dispatch('keydown', keyEvent('keydown', 'Escape'));
+
+    expect(interact).toHaveBeenCalledTimes(1);
+    expect(attack).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
     controller.detach();
   });
 

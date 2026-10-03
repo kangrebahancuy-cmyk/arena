@@ -1,16 +1,16 @@
-import { TILE_SIZE } from '@project-realm/shared';
+import { TILE_SIZE, createGameConfig, tileIdAt } from '@project-realm/shared';
 import type { GameConfig } from '@project-realm/shared';
-import { createGameConfig } from '@project-realm/shared';
 import { describe, expect, it } from 'vitest';
+import { TileCollision } from '../physics/Collision';
 import type { RenderCommand } from '../render/scene';
-import { FOG_TILE_INDEX, WorldSession } from './WorldSession';
-import { createPrototypeWorld } from './PrototypeWorld';
+import { WorldSession } from './WorldSession';
+import { createGreenhavenWorld } from './GreenhavenWorld';
 
 const GAME: GameConfig = createGameConfig();
 const STEP = 1 / GAME.simulation.hz;
 
 function makeSession(overrides: { zoom?: number } = {}) {
-  const world = createPrototypeWorld();
+  const world = createGreenhavenWorld();
   const session = new WorldSession({
     world,
     playerId: 'local:test',
@@ -32,18 +32,46 @@ function simulate(session: WorldSession, seconds: number): RenderCommand[] {
   return commands;
 }
 
-describe('WorldSession', () => {
-  it('starts on the prototype spawn with the fog still covering the map', () => {
-    const { session, world } = makeSession();
-    expect(session.player.position).toEqual(world.spawn);
-    expect(session.simulationHz).toBe(GAME.simulation.hz);
+function mapObjectCount(world: ReturnType<typeof createGreenhavenWorld>): number {
+  return world.map.layers.reduce(
+    (count, layer) => (layer.kind === 'objects' ? count + layer.objects.length : count),
+    0,
+  );
+}
 
-    const ground = session.currentScene.layers[0];
-    expect(ground?.tiles).toHaveLength(world.map.columns * world.map.rows);
-    expect(ground?.tiles.every((index) => index === FOG_TILE_INDEX)).toBe(true);
+describe('WorldSession', () => {
+  it('loads the Greenhaven player spawn and resolves its named area', () => {
+    const { session, world } = makeSession();
+
+    expect(world.map.name).toBe('Greenhaven');
+    expect(session.player.position).toEqual(world.spawn.position);
+    expect(session.areaName).toBe('Greenhaven Village');
+    expect(session.simulationHz).toBe(GAME.simulation.hz);
   });
 
-  it('adds the player, the objects, the villagers and their labels on the first tick', () => {
+  it('builds ground and decoration scenes from shared map layers', () => {
+    const { session, world } = makeSession();
+    const groundData = world.map.layers.find(
+      (layer) => layer.kind === 'tile' && layer.role === 'ground',
+    );
+    const decorData = world.map.layers.find(
+      (layer) => layer.kind === 'tile' && layer.role === 'decoration',
+    );
+    if (groundData?.kind !== 'tile' || decorData?.kind !== 'tile') {
+      throw new Error('Greenhaven is missing a visible tile layer');
+    }
+    const commands = session.tick(STEP);
+    const tileLayers = session.currentScene.layers;
+
+    expect(commands.filter((command) => command.type === 'layer-added')).toHaveLength(2);
+    expect(tileLayers.map((layer) => layer.role)).toEqual(['ground', 'decoration']);
+    expect(tileLayers[0]?.tiles).toEqual(groundData?.tiles);
+    expect(tileLayers[1]?.tiles).toEqual(decorData?.tiles);
+    expect(tileLayers[0]?.tiles).toHaveLength(world.map.columns * world.map.rows);
+    expect(world.map.layers.some((layer) => layer.kind === 'collision')).toBe(true);
+  });
+
+  it('adds the player, map objects, original NPCs, monsters and their labels on the first tick', () => {
     const { session, world } = makeSession();
     const commands = session.tick(STEP);
     const types = commands.map((command) => command.type);
@@ -52,160 +80,212 @@ describe('WorldSession', () => {
     expect(types).toContain('camera');
     expect(types).toContain('layer-added');
     expect(types).toContain('actor-added');
+    expect(types).toContain('object-added');
     expect(types).toContain('ui-added');
 
     const actors = commands.filter((command) => command.type === 'actor-added');
-    expect(actors).toHaveLength(1 + world.patrols.length);
+    expect(actors).toHaveLength(1 + world.npcs.length + world.monsters.length);
     expect(commands.filter((command) => command.type === 'object-added')).toHaveLength(
-      world.objects.length,
+      mapObjectCount(world),
     );
   });
 
-  it('walks the player in the pressed direction at the configured speed', () => {
+  it('walks the player in the pressed direction at configured speed', () => {
     const { session } = makeSession();
     session.setIntent({ moving: true, direction: 'east' });
-    const before = session.player.position.x;
+    const before = { ...session.player.position };
 
     simulate(session, 1);
 
-    // Prototype walking speed is 4.2 tiles per second; the exact value lives in the session, so the
-    // assertion is that it moved a real distance in the right direction, not a copied constant.
-    expect(session.player.position.x - before).toBeGreaterThan(4);
-    expect(session.player.position.x - before).toBeLessThan(4.5);
-    expect(session.player.position.y).toBeCloseTo(before === 0 ? 0 : session.player.position.y, 5);
-    expect(session.player.facing).toBe('east');
+    expect(session.player.position.x - before.x).toBeGreaterThan(4);
+    expect(session.player.position.x - before.x).toBeLessThan(4.5);
+    expect(session.player.position.y).toBe(before.y);
+    expect(session.player.direction).toBe('east');
+    expect(session.player.speed).toBe(GAME.movement.playerSpeedTilesPerSecond);
+    expect(session.player.movementState).toBe('moving');
+    expect(session.player.animationState).toBe('walk');
   });
 
-  it('never walks onto blocked tiles, and turns to face the wall instead', () => {
-    const { session, world } = makeSession();
-    const terrain = world.map.layers[0]?.tiles ?? [];
-    const columns = world.map.columns;
+  it('interpolates the rendered actor and camera between fixed simulation steps', () => {
+    const { session } = makeSession();
+    session.setIntent({ moving: true, direction: 'east' });
+    session.tick(STEP);
+    const startX = session.player.position.x;
+    const previousRenderX = session.currentScene.actors.get(session.player.id)?.position.x;
 
-    // The lake sits in the south-west; walk west for twenty seconds and the player must end up stopped
-    // against it rather than standing in the water.
+    session.tick(STEP / 2);
+
+    const renderX = session.currentScene.actors.get(session.player.id)?.position.x;
+    const halfStep = (GAME.movement.playerSpeedTilesPerSecond * STEP) / 2;
+    expect(renderX).toBeCloseTo(startX - halfStep);
+    expect(renderX).toBeGreaterThan(previousRenderX ?? 0);
+    expect(session.camera.snapshot.x).toBeCloseTo(((renderX ?? 0) + 0.5) * TILE_SIZE);
+  });
+
+  it('stops moving and returns to idle animation when the input is released', () => {
+    const { session } = makeSession();
+    session.setIntent({ moving: true, direction: 'east' });
+    simulate(session, 0.5);
+    const stoppedAt = { ...session.player.position };
+
+    session.setIntent({ moving: false, direction: 'east' });
+    simulate(session, 0.5);
+
+    expect(session.player.position).toEqual(stoppedAt);
+    expect(session.player.movementState).toBe('idle');
+    expect(session.player.animationState).toBe('idle');
+    expect(session.currentScene.actors.get(session.player.id)).toMatchObject({
+      moving: false,
+      animationState: 'idle',
+    });
+  });
+
+  it('stops at Moonmere water while keeping the player in the named shore area', () => {
+    const { session, world } = makeSession();
+    const collision = new TileCollision({ map: world.map });
     session.setIntent({ moving: true, direction: 'west' });
     simulate(session, 20);
 
-    const column = Math.floor(session.player.position.x);
-    const row = Math.floor(session.player.position.y);
-    const standingOn = terrain[row * columns + column] ?? -1;
-    expect(world.walkable(standingOn)).toBe(true);
-
-    // And the tile in front of the player is the reason it stopped: not walkable.
-    const blocked = new Set([3, 4]);
-    const ahead = terrain[row * columns + Math.max(0, column - 1)] ?? -1;
-    expect(blocked.has(ahead) || column <= 1).toBe(true);
-    expect(session.player.facing).toBe('west');
+    expect(session.player.position.x).toBeLessThan(world.spawn.position.x);
+    expect(session.player.position.x).toBeGreaterThan(18);
+    expect(collision.canOccupy(session.player.position)).toBe(true);
+    expect(tileIdAt(world.map, 'ground', 16, 33)).toBe('water');
+    expect(collision.canOccupy({ x: 16, y: 33 })).toBe(false);
+    expect(session.areaName).toBe('Moonmere Shore');
+    expect(session.player.direction).toBe('west');
+    expect(session.player.movementState).toBe('idle');
   });
 
-  it('moves the camera to follow the player, and keeps it inside the map', () => {
-    const { session } = makeSession();
+  it('moves the camera with the player and keeps it inside Greenhaven bounds', () => {
+    const { session, world } = makeSession();
     const startX = session.camera.snapshot.x;
-
     session.setIntent({ moving: true, direction: 'east' });
     simulate(session, 3);
 
     expect(session.camera.snapshot.x).toBeGreaterThan(startX);
     const camera = session.camera.snapshot;
     const halfViewport = 800 / (2 * camera.zoom);
-    expect(camera.x).toBeGreaterThanOrEqual(halfViewport - 2 * TILE_SIZE - 1);
-    expect(camera.x).toBeLessThanOrEqual(64 * TILE_SIZE - halfViewport + 2 * TILE_SIZE + 1);
+    expect(camera.x).toBeGreaterThanOrEqual(halfViewport - 1);
+    expect(camera.x).toBeLessThanOrEqual(world.map.bounds.width * TILE_SIZE - halfViewport + 1);
   });
 
-  it('reveals the fog around the player and only there', () => {
+  it('does not re-send static map layers or objects after their initial scene commands', () => {
     const { session } = makeSession();
-    simulate(session, 0.5);
-
-    const ground = session.currentScene.layers[0];
-    const columns = ground?.columns ?? 1;
-    const centre = { column: 32, row: 20 };
-    const at = (column: number, row: number): number => ground?.tiles[row * columns + column] ?? -9;
-
-    expect(at(centre.column, centre.row)).toBe(-1); // cleared under the player
-    expect(at(centre.column + 20, centre.row)).toBe(FOG_TILE_INDEX); // still cloud far away
-
-    // The revealed area is bounded: no tile outside the radius was touched.
-    const touched = (ground?.tiles ?? []).reduce(
-      (count, index) => (index === FOG_TILE_INDEX ? count : count + 1),
-      0,
-    );
-    expect(touched).toBeGreaterThan(0);
-    expect(touched).toBeLessThanOrEqual(Math.PI * 8 * 8);
-  });
-
-  it('reports fog clears as tile patches, never as a re-sent layer', () => {
-    const { session } = makeSession();
-    const first = session.tick(STEP);
-    expect(first.filter((command) => command.type === 'layer-added')).toHaveLength(1);
-
-    const second = session.tick(STEP);
-    expect(second.some((command) => command.type === 'layer-added')).toBe(false);
-
-    const patches = second.filter((command) => command.type === 'tiles-changed');
-    // Standing still reveals the same area, so once the surroundings are clear there is nothing to
-    // patch - the honest answer is "no commands at all" for the tiles.
-    expect(patches.length).toBe(0);
-  });
-
-  it('does not re-send commands for state that did not change', () => {
-    const { session } = makeSession();
-    session.setIntent({ moving: false, direction: 'south' });
+    session.tick(STEP);
     simulate(session, 0.5);
     const idle = session.tick(STEP);
 
-    // The camera transform is re-sent every frame (the renderer has no other way to learn it), and the
-    // villagers report their own movement - but nothing is re-added, and the idle player is not resent.
     expect(idle.map((command) => command.type)).toContain('camera');
-    expect(
-      idle.some(
-        (command) => command.type === 'actor-changed' && command.actor.id === session.player.id,
-      ),
-    ).toBe(false);
-    for (const type of [
-      'layer-added',
-      'object-added',
-      'ui-added',
-      'effect-added',
-      'tiles-changed',
-    ]) {
-      expect(idle.map((command) => command.type)).not.toContain(type);
-    }
+    expect(idle.some((command) => command.type === 'layer-added')).toBe(false);
+    expect(idle.some((command) => command.type === 'object-added')).toBe(false);
+    expect(idle.some((command) => command.type === 'tiles-changed')).toBe(false);
   });
 
   it('emits dust while walking and retires it again once its lifetime is over', () => {
     const { session } = makeSession();
     session.setIntent({ moving: true, direction: 'south' });
     const walking = simulate(session, 1);
-    const added = walking.filter((command) => command.type === 'effect-added');
-    expect(added.length).toBeGreaterThan(0);
+    expect(walking.filter((command) => command.type === 'effect-added').length).toBeGreaterThan(0);
 
-    // Stop and let the puffs expire: the session removes them itself, so nothing leaks.
     session.setIntent({ moving: false, direction: 'south' });
     simulate(session, 1);
     expect(session.currentScene.effects.size).toBe(0);
   });
 
-  it('keeps the villagers walking their patrol routes', () => {
+  it('renders original NPCs from shared data and pauses player movement for dialogue', () => {
     const { session, world } = makeSession();
-    const villager = world.patrols[0];
-    if (villager === undefined) {
-      throw new Error('the prototype world has no patrols');
+    const elder = world.npcs.find((npc) => npc.id === 'npc-village-elder');
+    if (elder === undefined) {
+      throw new Error('Greenhaven is missing its Village Elder');
     }
-    const start = { ...(session.currentScene.actors.get(villager.id)?.position ?? { x: 0, y: 0 }) };
+    expect(session.currentScene.actors.get(elder.id)).toMatchObject({
+      appearance: 'elder',
+      layer: 'npcs',
+      name: 'Village Elder',
+      position: elder.position,
+    });
+    expect(session.nearbyNpc?.name).toBe('Village Elder');
+    expect(session.currentScene.ui.has('npc-interaction-prompt')).toBe(true);
 
-    simulate(session, 2);
+    expect(session.interact()).toBe(true);
+    expect(session.dialogue).toMatchObject({
+      npcId: elder.id,
+      npcName: 'Village Elder',
+      nodeId: 'elder-greeting',
+    });
+    expect(session.currentScene.ui.has('npc-interaction-prompt')).toBe(false);
 
-    const moved = session.currentScene.actors.get(villager.id)?.position;
-    expect(moved).toBeDefined();
-    expect(Math.hypot((moved?.x ?? 0) - start.x, (moved?.y ?? 0) - start.y)).toBeGreaterThan(0.5);
+    session.setIntent({ moving: true, direction: 'east' });
+    const before = { ...session.player.position };
+    simulate(session, 0.5);
+    expect(session.player.position).toEqual(before);
+    expect(session.player.movementState).toBe('idle');
+
+    expect(session.chooseDialogueChoice('elder-leave')).toBe(true);
+    expect(session.dialogue).toBeNull();
+    simulate(session, 0.5);
+    expect(session.player.position.x).toBeGreaterThan(before.x);
+  });
+
+  it('keeps every Greenhaven monster spawn and patrol point out of solid world data', () => {
+    const { world } = makeSession();
+    const collision = new TileCollision({ map: world.map });
+
+    for (const monster of world.monsters) {
+      expect(collision.canOccupy(monster.position), `${monster.name} spawn`).toBe(true);
+      for (const waypoint of monster.patrolWaypoints) {
+        expect(collision.canOccupy(waypoint), `${monster.name} waypoint`).toBe(true);
+      }
+    }
+  });
+
+  it('spawns monsters, lets AI chase and attack, then accepts player damage and death', () => {
+    const baseWorld = createGreenhavenWorld();
+    const definition = baseWorld.monsters[0];
+    if (definition === undefined) {
+      throw new Error('Greenhaven is missing its Forest Slime spawn');
+    }
+    const world = {
+      ...baseWorld,
+      monsters: [
+        {
+          ...definition,
+          position: { x: 38.5, y: 33.5 },
+          patrolWaypoints: [
+            { x: 38.5, y: 33.5 },
+            { x: 40.5, y: 33.5 },
+          ],
+        },
+      ],
+    };
+    const session = new WorldSession({
+      world,
+      playerId: 'local:test',
+      playerName: 'Tester',
+      game: GAME,
+    });
+    session.setViewport({ width: 800, height: 600 });
+
+    expect(session.currentScene.actors.get(definition.id)).toMatchObject({
+      layer: 'monsters',
+      appearance: 'forest_slime',
+    });
+    simulate(session, 1.5);
+    expect(session.monsterStates[0]?.state).toBe('ATTACK');
+    expect(session.playerHealth.hp).toBeLessThan(session.playerHealth.maxHP);
+
+    expect(session.attackNearestMonster()).toMatchObject({ status: 'hit', hp: 6, state: 'HURT' });
+    simulate(session, 0.5);
+    expect(session.attackNearestMonster()).toMatchObject({ status: 'hit', hp: 0, state: 'DEAD' });
+    expect(session.monsterStatus).toContain('active');
   });
 
   it('bounds catch-up work: a long stall is dropped and reported, not simulated', () => {
     const { session } = makeSession();
     const before = session.steps;
-    const commands = session.tick(30); // a tab hidden for half a minute
-
+    const commands = session.tick(30);
     const steps = session.steps - before;
+
     expect(steps).toBeLessThanOrEqual(GAME.simulation.maxCatchUpSteps);
     expect(session.droppedSeconds).toBeGreaterThan(0);
     expect(Number.isFinite(session.droppedSeconds)).toBe(true);
@@ -221,7 +301,7 @@ describe('WorldSession', () => {
     expect(session.steps).toBe(before);
   });
 
-  it('walks at the same speed at 60 Hz and at 15 Hz, because everything is time-based', () => {
+  it('walks at the same speed at 60 Hz and 15 Hz because movement is time-based', () => {
     const fast = makeSession().session;
     const slow = makeSession().session;
     fast.setIntent({ moving: true, direction: 'north' });
@@ -234,9 +314,7 @@ describe('WorldSession', () => {
       slow.tick(1 / 15);
     }
 
-    // Within one fixed step's worth of movement: both ran the same simulated time, so the only possible
-    // difference is the accumulator's remainder at the moment the last frame was rendered.
-    const oneStep = 4.2 / GAME.simulation.hz;
+    const oneStep = GAME.movement.playerSpeedTilesPerSecond / GAME.simulation.hz;
     expect(Math.abs(fast.player.position.y - slow.player.position.y)).toBeLessThan(oneStep * 1.5);
   });
 });

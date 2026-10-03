@@ -1,13 +1,19 @@
 import { TILE_SIZE, worldPositionToTile } from '@project-realm/shared';
-import type { GameConfig, Logger } from '@project-realm/shared';
+import type {
+  GameConfig,
+  Logger,
+  MoveIntent,
+  NearbyNpcState,
+  NpcDialogueState,
+} from '@project-realm/shared';
 import type { AssetProgress } from '../render/Assets';
 import { PixiRenderer } from '../render/PixiRenderer';
 import type { RenderStats, WorldRenderer } from '../render/WorldRenderer';
 import type { Viewport } from '../render/scene';
 import { GameLoop } from './GameLoop';
-import { createPrototypeWorld } from './PrototypeWorld';
+import { createGreenhavenWorld } from './GreenhavenWorld';
+import type { PlayerAttackResult } from './MonsterCombat';
 import { WorldSession } from './WorldSession';
-import type { MoveIntent } from './WorldSession';
 
 /** Everything the stage needs from the outside world; all of it injectable, so it is testable. */
 export interface WorldStageOptions {
@@ -31,9 +37,9 @@ export interface WorldStageOptions {
 /**
  * WorldStage - everything between "the client is online" and "a world is on screen".
  *
- * It owns the canvas, the asset loading, the renderer, the session and the loop, and it is the only
- * place that knows all of them (the composition root of the world; `GameClient` is the composition
- * root of the client as a whole). Order matters and is enforced here:
+ * It owns the canvas, asset loading, renderer, local world/session and simulation loop, and is the only
+ * place that knows all of them (the world composition root; `GameClient` owns the HTTP boot handshake).
+ * `WorldBootstrap` wires input to the stage without making the stage depend on DOM events. Order matters:
  *
  *   1. the canvas gets a real size before the renderer is created,
  *   2. assets load before anything is drawn (a world drawn from missing art is a world of holes),
@@ -87,6 +93,7 @@ export class WorldStage {
    */
   get hud(): {
     zone: string;
+    area: string;
     backend: string;
     fps: number;
     deltaMs: number;
@@ -94,11 +101,21 @@ export class WorldStage {
     steps: number;
     droppedSeconds: number;
     camera: { x: number; y: number; zoom: number };
-    player: { column: number; row: number; facing: string; moving: boolean };
+    player: {
+      column: number;
+      row: number;
+      direction: string;
+      movementState: string;
+      speed: number;
+      animationState: string;
+    };
     visible: { tiles: number; objects: number; actors: number; effects: number };
     viewport: { width: number; height: number; resolution: number };
     pixelated: boolean;
     intent: string;
+    nearbyNpc: string;
+    playerHealth: string;
+    monsters: string;
   } {
     const session = this.session;
     const position = session?.player.position ?? { x: 0, y: 0 };
@@ -109,6 +126,7 @@ export class WorldStage {
     return {
       // Zone and backend are real values; before the world starts they are simply empty.
       zone: session?.zoneName ?? '—',
+      area: session?.areaName ?? '—',
       backend: this.renderer?.backend ?? '—',
       fps: this.loop?.fps ?? 0,
       deltaMs: this.lastDeltaSeconds * 1000,
@@ -119,8 +137,10 @@ export class WorldStage {
       player: {
         column: tile.column,
         row: tile.row,
-        facing: session?.player.facing ?? '—',
-        moving: session?.isMoving ?? false,
+        direction: session?.player.direction ?? '—',
+        movementState: session?.player.movementState ?? 'idle',
+        speed: session?.player.speed ?? this.options.game.movement.playerSpeedTilesPerSecond,
+        animationState: session?.player.animationState ?? 'idle',
       },
       visible: {
         tiles: this.lastStats.visibleTiles,
@@ -135,6 +155,10 @@ export class WorldStage {
       },
       pixelated: this.pixelated,
       intent: held,
+      nearbyNpc: session?.nearbyNpc?.name ?? 'None',
+      playerHealth:
+        session === undefined ? '—' : `${session.playerHealth.hp}/${session.playerHealth.maxHP} HP`,
+      monsters: session?.monsterStatus ?? '—',
     };
   }
 
@@ -183,7 +207,7 @@ export class WorldStage {
     });
 
     // 3. The world and its session.
-    const world = createPrototypeWorld();
+    const world = createGreenhavenWorld();
     const session = new WorldSession({
       world,
       playerId: this.options.playerId,
@@ -213,8 +237,10 @@ export class WorldStage {
     this.options.onReady?.({ backend: renderer.backend });
     logger?.info('world ready', {
       zone: session.zoneName,
+      area: session.areaName,
       backend: renderer.backend,
       hz: session.simulationHz,
+      playerSpeedTilesPerSecond: this.options.game.movement.playerSpeedTilesPerSecond,
     });
 
     return { backend: renderer.backend };
@@ -229,6 +255,34 @@ export class WorldStage {
   /** Movement intent as the stage last received it (the HUD reads it to show what is being pressed). */
   get currentIntent(): MoveIntent {
     return this.intent;
+  }
+
+  get nearbyNpc(): NearbyNpcState | null {
+    return this.session?.nearbyNpc ?? null;
+  }
+
+  get dialogue(): NpcDialogueState | null {
+    return this.session?.dialogue ?? null;
+  }
+
+  interact(): boolean {
+    return this.session?.interact() ?? false;
+  }
+
+  continueDialogue(): boolean {
+    return this.session?.continueDialogue() ?? false;
+  }
+
+  chooseDialogueChoice(choiceId: string): boolean {
+    return this.session?.chooseDialogueChoice(choiceId) ?? false;
+  }
+
+  closeDialogue(): boolean {
+    return this.session?.closeDialogue() ?? false;
+  }
+
+  attackNearestMonster(): PlayerAttackResult | null {
+    return this.session?.attackNearestMonster() ?? null;
   }
 
   /** Zoom by whole steps, from the HUD buttons or the keyboard. */

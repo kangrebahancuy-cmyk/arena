@@ -422,6 +422,106 @@ h1 {
   pointer-events: auto;
 }
 
+.world__interaction {
+  position: absolute;
+  left: 16px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  padding: 8px 10px 8px 14px;
+  border: 1px solid rgb(45 212 191 / 55%);
+  border-radius: 14px;
+  background: rgb(17 22 43 / 94%);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 30%);
+  pointer-events: auto;
+}
+
+.world__interaction[hidden] {
+  display: none;
+}
+
+.world__interaction-hint {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.dialogue {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 20px;
+  width: min(42rem, calc(100% - 32px));
+  padding: clamp(16px, 3vw, 24px);
+  transform: translateX(-50%);
+  border: 1px solid rgb(139 108 255 / 48%);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgb(23 28 55 / 98%), rgb(13 18 35 / 98%));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 52%);
+  pointer-events: auto;
+}
+
+.dialogue[hidden] {
+  display: none;
+}
+
+.dialogue__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.dialogue__role {
+  margin: 0;
+  color: var(--accent-b);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dialogue__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.dialogue__message {
+  margin: 14px 0 18px;
+  color: #f0f1fa;
+  font-size: clamp(0.96rem, 2.5vw, 1.08rem);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.dialogue__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 8px;
+}
+
+.dialogue__choice {
+  min-height: 44px;
+  text-align: left;
+}
+
+.dialogue__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dialogue__continue {
+  border-color: rgb(45 212 191 / 45%);
+}
+
 @media (max-width: 640px) {
   .hud {
     width: min(18rem, calc(100% - 24px));

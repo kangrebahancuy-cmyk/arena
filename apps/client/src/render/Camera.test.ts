@@ -89,6 +89,22 @@ describe('Camera', () => {
     expect(camera.snapshot.y).toBe(40 * TILE_SIZE - 120 + TILE_SIZE);
   });
 
+  it('clamps against explicit offset world bounds without showing beyond their edges', () => {
+    const camera = instantCamera({ zoom: 1 });
+    camera.setViewport({ width: 320, height: 240 });
+    const bounds = { x: 10, y: 4, width: 30, height: 20 };
+
+    camera.snapTo({ x: -1_000, y: -1_000 });
+    camera.clampToBounds(bounds, TILE_SIZE);
+    expect(camera.snapshot.x).toBe(10 * TILE_SIZE + 160);
+    expect(camera.snapshot.y).toBe(4 * TILE_SIZE + 120);
+
+    camera.snapTo({ x: 1_000, y: 1_000 });
+    camera.clampToBounds(bounds, TILE_SIZE);
+    expect(camera.snapshot.x).toBe((10 + 30) * TILE_SIZE - 160);
+    expect(camera.snapshot.y).toBe((4 + 20) * TILE_SIZE - 120);
+  });
+
   it('centres a map that is smaller than the viewport on that axis', () => {
     const camera = instantCamera({ zoom: 1 });
     camera.setViewport({ width: 800, height: 600 });

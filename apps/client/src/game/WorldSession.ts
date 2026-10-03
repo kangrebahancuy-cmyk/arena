@@ -1,10 +1,19 @@
-import { FixedTimestep, TILE_SIZE, worldPositionToTile } from '@project-realm/shared';
-import type { Direction, GameConfig, Logger, Position } from '@project-realm/shared';
+import { FixedTimestep, TILE_SIZE, areaAtPosition } from '@project-realm/shared';
+import type {
+  GameConfig,
+  Logger,
+  MoveIntent,
+  NearbyNpcState,
+  NpcDialogueState,
+  Position,
+} from '@project-realm/shared';
+import { TileCollision } from '../physics/Collision';
 import { Camera, defaultZoomForViewport } from '../render/Camera';
 import type { Viewport } from '../render/scene';
 import {
   diffScene,
   emptyScene,
+  type ActorAnimationState,
   type ActorState,
   type ObjectState,
   type RenderCommand,
@@ -12,49 +21,28 @@ import {
   type WorldScene,
   type WorldUiState,
 } from '../render/scene';
-import type { PrototypeWorld } from './PrototypeWorld';
-
-/**
- * Prototype walking speed in tiles per second. Tuned so the camera follow, the walk cycle and the
- * dust emission are all visible at default zoom. The authoritative speed will live on the server.
- */
-const WALK_SPEED_TILES_PER_SECOND = 4.2;
+import type { GreenhavenWorld } from './GreenhavenWorld';
+import { MonsterAI } from './MonsterAI';
+import { MonsterCombat } from './MonsterCombat';
+import type { PlayerAttackResult } from './MonsterCombat';
+import type { MonsterEntity, MonsterRuntimeState } from './MonsterEntity';
+import { MonsterSpawner } from './MonsterSpawner';
+import { NpcInteractionSystem } from './NpcInteractionSystem';
+import { PlayerController } from './PlayerController';
+import type { LocalPlayerState } from './PlayerController';
 
 /** How often a footstep puff is emitted while walking. */
 const DUST_INTERVAL_SECONDS = 0.22;
-
-/** Tiles revealed around the walker by the prototype fog-of-war. */
-const REVEAL_RADIUS_TILES = 7;
 
 /**
  * How long a dust puff exists. Slightly longer than the renderer's own animation (0.45 s) so the
  * sprite always plays to the end before its scene entry is retired.
  */
 const EFFECT_LIFETIME_SECONDS = 0.5;
-
-/** Movement intent, in the shape input produces it. */
-export interface MoveIntent {
-  readonly moving: boolean;
-  readonly direction: Direction;
-}
+const PROTOTYPE_PLAYER_MAX_HP = 100;
 
 /**
- * The character the player drives in the prototype.
- *
- * Deliberately NOT the shared `PlayerState`: that type is server-issued and carries a branded id a
- * client must never invent (see `PlayerIdSchema`). Until the server owns avatars (Phase 10), this
- * local walker is the honest stand-in - a plain `{ id, name, position, facing }` whose fields already
- * match what the server will send, so swapping it later is a substitution, not a rewrite.
- */
-export interface LocalWalker {
-  readonly id: string;
-  readonly name: string;
-  position: Position;
-  facing: Direction;
-}
-
-/**
- * WorldSession - the prototype world's logic, and the bridge between game code and the renderer.
+ * WorldSession - Greenhaven's local world logic and the bridge between game code and the renderer.
  *
  * Responsibilities:
  *   - hold the authoritative-for-now state the renderer draws: tile layers, objects, actors, effects
@@ -70,18 +58,25 @@ export interface LocalWalker {
  * in plain words while it is on screen.
  *
  * No PixiJS, no DOM: everything here runs in Node, which is why the movement, the camera follow, the
- * fog reveal and the render diff are all covered by unit tests.
+ * map collision, area lookup and the render diff are all covered by unit tests.
  */
 export class WorldSession {
-  readonly player: LocalWalker;
   readonly camera: Camera;
 
-  private readonly world: PrototypeWorld;
+  private readonly world: GreenhavenWorld;
+  private readonly collision: TileCollision;
+  private readonly playerController: PlayerController;
+  private readonly npcInteractions: NpcInteractionSystem;
+  private readonly monsterSpawner: MonsterSpawner;
+  private readonly monsterAI: MonsterAI;
+  private readonly monsterCombat: MonsterCombat;
+  private playerHp = PROTOTYPE_PLAYER_MAX_HP;
   private readonly timestep: FixedTimestep;
+  private latestIntent: MoveIntent = { moving: false, direction: 'south' };
   private readonly logger: Logger | undefined;
   private scene: WorldScene;
   private rendered: WorldScene = emptyScene();
-  private intent: MoveIntent;
+  private previousPlayerPosition: Position = { x: 0, y: 0 };
   private dustTimer = 0;
   private stepCount = 0;
   private droppedSecondsTotal = 0;
@@ -90,7 +85,7 @@ export class WorldSession {
   private pendingViewport: Viewport | undefined;
 
   constructor(options: {
-    readonly world: PrototypeWorld;
+    readonly world: GreenhavenWorld;
     readonly playerName: string;
     readonly playerId: string;
     readonly game: GameConfig;
@@ -105,16 +100,25 @@ export class WorldSession {
     );
     this.camera = new Camera(options.cameraOptions ?? {});
 
-    this.player = {
+    this.collision = new TileCollision({ map: options.world.map });
+    this.playerController = new PlayerController({
       id: options.playerId,
       name: options.playerName,
-      position: options.world.spawn,
-      facing: options.world.spawnFacing,
-    };
-    this.intent = { moving: false, direction: this.player.facing };
+      position: options.world.spawn.position,
+      direction: options.world.spawn.direction,
+      speed: options.game.movement.playerSpeedTilesPerSecond,
+      collision: this.collision,
+    });
+    this.npcInteractions = new NpcInteractionSystem(options.world.npcs);
+    this.monsterSpawner = new MonsterSpawner(options.world.monsters);
+    this.monsterAI = new MonsterAI();
+    this.monsterCombat = new MonsterCombat();
+    this.previousPlayerPosition = { ...this.player.position };
 
     this.scene = this.buildInitialScene();
-    this.camera.snapTo(this.cameraTarget());
+    this.npcInteractions.updatePlayerPosition(this.player.position);
+    this.syncInteractionPrompt();
+    this.camera.snapTo(this.cameraTarget(this.player.position));
   }
 
   /** Which fixed timestep the session runs on, for the debug HUD. */
@@ -132,12 +136,58 @@ export class WorldSession {
     return this.droppedSecondsTotal;
   }
 
+  get player(): LocalPlayerState {
+    return this.playerController.state;
+  }
+
   get isMoving(): boolean {
-    return this.intent.moving;
+    return this.player.movementState === 'moving';
   }
 
   get zoneName(): string {
     return this.world.map.name;
+  }
+
+  /** Most specific named area containing the player's current tile position. */
+  get areaName(): string {
+    return areaAtPosition(this.world.map, this.player.position)?.name ?? this.world.map.name;
+  }
+
+  get nearbyNpc(): NearbyNpcState | null {
+    return this.npcInteractions.nearbyNpc;
+  }
+
+  get dialogue(): NpcDialogueState | null {
+    return this.npcInteractions.dialogue;
+  }
+
+  get monsterStates(): readonly MonsterRuntimeState[] {
+    return this.monsterSpawner.monsters.map((monster) => monster.snapshot());
+  }
+
+  get playerHealth(): { readonly hp: number; readonly maxHP: number } {
+    return { hp: this.playerHp, maxHP: PROTOTYPE_PLAYER_MAX_HP };
+  }
+
+  get monsterStatus(): string {
+    const monsters = this.monsterSpawner.monsters;
+    const alive = monsters.filter((monster) => monster.state !== 'DEAD');
+    let closest: MonsterEntity | undefined;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (const monster of alive) {
+      const distance = Math.hypot(
+        monster.position.x - this.player.position.x,
+        monster.position.y - this.player.position.y,
+      );
+      if (distance < closestDistance) {
+        closest = monster;
+        closestDistance = distance;
+      }
+    }
+    if (closest !== undefined && closestDistance <= closest.definition.detectionRadius + 2) {
+      return `${closest.name} · ${closest.state} · ${closest.hp}/${closest.maxHP} HP`;
+    }
+    return `${alive.length}/${monsters.length} active`;
   }
 
   /** Current viewport size in CSS pixels. */
@@ -146,7 +196,62 @@ export class WorldSession {
   }
 
   setIntent(intent: MoveIntent): void {
-    this.intent = intent;
+    this.latestIntent = intent;
+    this.playerController.setIntent(
+      this.npcInteractions.isDialogueOpen ? { moving: false, direction: intent.direction } : intent,
+    );
+  }
+
+  /** Opens the nearest in-range NPC's dialogue and pauses player movement while it is open. */
+  interact(): boolean {
+    const opened = this.npcInteractions.interact(this.player.position);
+    if (opened) {
+      this.playerController.setIntent({ moving: false, direction: this.player.direction });
+    }
+    this.syncInteractionPrompt();
+    return opened;
+  }
+
+  /** Advances a linear dialogue node, or closes a terminal line when it has no responses. */
+  continueDialogue(): boolean {
+    if (this.npcInteractions.continueDialogue()) {
+      this.syncInteractionPrompt();
+      return true;
+    }
+    const dialogue = this.npcInteractions.dialogue;
+    return dialogue !== null && dialogue.choices.length === 0 ? this.closeDialogue() : false;
+  }
+
+  chooseDialogueChoice(choiceId: string): boolean {
+    const chosen = this.npcInteractions.choose(choiceId);
+    if (!chosen) {
+      return false;
+    }
+    if (!this.npcInteractions.isDialogueOpen) {
+      this.playerController.setIntent(this.latestIntent);
+    }
+    this.syncInteractionPrompt();
+    return true;
+  }
+
+  closeDialogue(): boolean {
+    const closed = this.npcInteractions.closeDialogue();
+    if (closed) {
+      this.playerController.setIntent(this.latestIntent);
+      this.syncInteractionPrompt();
+    }
+    return closed;
+  }
+
+  attackNearestMonster(): PlayerAttackResult {
+    const result = this.monsterCombat.attackNearest(
+      this.monsterSpawner.monsters,
+      this.player.position,
+    );
+    if (result.status === 'hit') {
+      this.syncMonsterActors();
+    }
+    return result;
   }
 
   /**
@@ -161,7 +266,6 @@ export class WorldSession {
     this.pendingViewport = viewport;
   }
 
-  /** Current viewport size in CSS pixels, for the renderer's resize path. */
   /** Picks a zoom that shows a sensible amount of the world on this screen size. */
   setDefaultZoomForViewport(): void {
     this.camera.setZoom(defaultZoomForViewport(this.viewport));
@@ -194,9 +298,13 @@ export class WorldSession {
       this.simulateStep(this.timestep.stepSeconds);
     }
 
-    this.camera.follow(this.cameraTarget(), deltaSeconds);
-    this.camera.clampToMap(this.world.map.columns, this.world.map.rows, TILE_SIZE);
-    this.revealAroundPlayer();
+    this.npcInteractions.updatePlayerPosition(this.player.position);
+    this.syncInteractionPrompt();
+
+    const renderPosition = this.interpolatedPlayerPosition();
+    this.syncPlayerActor(renderPosition);
+    this.camera.follow(this.cameraTarget(renderPosition), deltaSeconds);
+    this.camera.clampToBounds(this.world.map.bounds, TILE_SIZE);
 
     return this.emitCommands();
   }
@@ -211,120 +319,38 @@ export class WorldSession {
   private simulateStep(stepSeconds: number): void {
     this.stepCount += 1;
 
-    if (this.intent.moving) {
-      const moved = this.movePlayer(this.intent.direction, stepSeconds);
-      if (moved) {
-        this.dustTimer += stepSeconds;
-        if (this.dustTimer >= DUST_INTERVAL_SECONDS) {
-          this.dustTimer = 0;
-          this.spawnDust();
-        }
+    this.previousPlayerPosition = { ...this.player.position };
+    const update = this.playerController.update(stepSeconds);
+    if (update.moved) {
+      this.dustTimer += stepSeconds;
+      if (this.dustTimer >= DUST_INTERVAL_SECONDS) {
+        this.dustTimer = 0;
+        this.spawnDust();
       }
     } else {
       this.dustTimer = DUST_INTERVAL_SECONDS; // the next step emits immediately
     }
 
-    this.updatePatrols(stepSeconds);
+    this.monsterSpawner.update(stepSeconds);
+    const monsters = this.monsterSpawner.monsters;
+    for (const monster of monsters) {
+      this.monsterAI.update(monster, this.player.position, stepSeconds, this.collision);
+    }
+    for (const attack of this.monsterCombat.update(monsters, this.player.position, stepSeconds)) {
+      this.playerHp = Math.max(0, this.playerHp - attack.damage);
+      this.logger?.debug('monster attacked the local player', {
+        monsterId: attack.monsterId,
+        damage: attack.damage,
+        hp: this.playerHp,
+      });
+    }
+    this.syncMonsterActors();
+
     this.retireEffects(stepSeconds);
   }
 
-  /** Moves the player, refusing the move when the target tile is not walkable. */
-  private movePlayer(direction: Direction, stepSeconds: number): boolean {
-    const distance = WALK_SPEED_TILES_PER_SECOND * stepSeconds;
-    const delta = DIRECTION_DELTA[direction];
-    const candidate = {
-      x: this.player.position.x + delta.x * distance,
-      y: this.player.position.y + delta.y * distance,
-    };
-
-    const facingChanged = this.player.facing !== direction;
-    const blocked = !this.canStandAt(candidate);
-
-    if (blocked) {
-      if (facingChanged) {
-        this.player.facing = direction; // turning in place is always allowed
-        this.syncPlayerActor();
-      }
-      return false;
-    }
-
-    this.player.position = candidate;
-    this.player.facing = direction;
-    this.syncPlayerActor();
-    return true;
-  }
-
-  /** A position is walkable when the tiles the character's body overlaps are walkable. */
-  private canStandAt(position: { x: number; y: number }): boolean {
-    const corners = [
-      worldPositionToTile({ x: position.x + 0.15, y: position.y + 0.15 }),
-      worldPositionToTile({ x: position.x + 0.85, y: position.y + 0.15 }),
-      worldPositionToTile({ x: position.x + 0.15, y: position.y + 0.85 }),
-      worldPositionToTile({ x: position.x + 0.85, y: position.y + 0.85 }),
-    ];
-    return corners.every((tile) => {
-      const layer = this.world.map.layers[0];
-      const index = layer?.tiles[tile.row * this.world.map.columns + tile.column] ?? -1;
-      return this.world.walkable(index);
-    });
-  }
-
-  private updatePatrols(stepSeconds: number): void {
-    for (const patrol of this.world.patrols) {
-      const actor = this.scene.actors.get(patrol.id);
-      if (actor === undefined) {
-        continue;
-      }
-      const target = patrol.waypoints[this.patrolTargetIndex(patrol.id)] ?? patrol.waypoints[0];
-      if (target === undefined) {
-        continue;
-      }
-
-      const deltaX = target.x - actor.position.x;
-      const deltaY = target.y - actor.position.y;
-      const remaining = Math.hypot(deltaX, deltaY);
-      const step = patrol.speed * stepSeconds;
-
-      if (remaining <= step) {
-        // Arrived: snap onto the waypoint and head for the next one.
-        const nextIndex = (this.patrolTargetIndex(patrol.id) + 1) % patrol.waypoints.length;
-        this.patrolTargets.set(patrol.id, nextIndex);
-        this.scene.actors.set(patrol.id, {
-          ...actor,
-          position: { x: target.x, y: target.y },
-          moving: false,
-        });
-        continue;
-      }
-
-      const direction: Direction =
-        Math.abs(deltaX) >= Math.abs(deltaY)
-          ? deltaX > 0
-            ? 'east'
-            : 'west'
-          : deltaY > 0
-            ? 'south'
-            : 'north';
-      this.scene.actors.set(patrol.id, {
-        ...actor,
-        position: {
-          x: actor.position.x + (deltaX / remaining) * step,
-          y: actor.position.y + (deltaY / remaining) * step,
-        },
-        facing: direction,
-        moving: true,
-      });
-    }
-  }
-
-  private readonly patrolTargets = new Map<string, number>();
-
   /** Remaining lifetime per live effect (see `retireEffects`). */
   private readonly pendingEffectRemovals = new Map<string, number>();
-
-  private patrolTargetIndex(patrolId: string): number {
-    return this.patrolTargets.get(patrolId) ?? 0;
-  }
 
   private spawnDust(): void {
     this.effectSequence += 1;
@@ -359,85 +385,33 @@ export class WorldSession {
     }
   }
 
-  /**
-   * Reveals the map around the player by clearing fog tiles.
-   *
-   * Prototype-only mechanic: it exists to exercise per-tile updates on a chunked tile layer (the
-   * structure a real tilemap needs), and it is labelled as prototype in the UI. A real world does not
-   * ship cloud fog - if it ever does, the server decides what each player has seen.
-   */
-  private revealAroundPlayer(): void {
-    const playerTile = worldPositionToTile(this.player.position);
-    const layer = this.scene.layers[0];
-    if (layer === undefined) {
-      return;
-    }
-
-    const changes: { column: number; row: number; index: number }[] = [];
-    for (
-      let row = playerTile.row - REVEAL_RADIUS_TILES;
-      row <= playerTile.row + REVEAL_RADIUS_TILES;
-      row += 1
-    ) {
-      for (
-        let column = playerTile.column - REVEAL_RADIUS_TILES;
-        column <= playerTile.column + REVEAL_RADIUS_TILES;
-        column += 1
-      ) {
-        if (column < 0 || row < 0 || column >= layer.columns || row >= layer.rows) {
-          continue;
-        }
-        const distance = Math.hypot(column - playerTile.column, row - playerTile.row);
-        if (distance > REVEAL_RADIUS_TILES) {
-          continue;
-        }
-        const index = row * layer.columns + column;
-        if (layer.tiles[index] !== FOG_TILE_INDEX) {
-          continue;
-        }
-        layer.tiles[index] = -1;
-        changes.push({ column, row, index: -1 });
-      }
-    }
-
-    if (changes.length > 0) {
-      // The tile array is owned by the scene; the changed indices are pushed to the renderer as a
-      // patch instead of resending the whole layer.
-      this.pendingTileChanges.push({ layerId: layer.id, changes });
-    }
-  }
-
-  private readonly pendingTileChanges: {
-    layerId: string;
-    changes: { column: number; row: number; index: number }[];
-  }[] = [];
-
   // ---------------------------------------------------------------- scene plumbing
 
   private buildInitialScene(): WorldScene {
     const { map } = this.world;
-    const ground: TileLayerState = {
-      id: this.world.layerId,
-      tiles: [...(map.layers[0]?.tiles ?? [])],
-      columns: map.columns,
-      rows: map.rows,
-      sheet: 'tileset',
-    };
-
-    // Everything starts under cloud; the player's surroundings are cleared on the first tick.
-    for (let index = 0; index < ground.tiles.length; index += 1) {
-      ground.tiles[index] = FOG_TILE_INDEX;
-    }
-
+    const layers: TileLayerState[] = [];
     const objects = new Map<string, ObjectState>();
-    for (const object of this.world.objects) {
-      objects.set(object.id, {
-        id: object.id,
-        sprite: object.sprite,
-        layer: 'objects',
-        column: object.column,
-        row: object.row,
-      });
+
+    for (const layer of map.layers) {
+      if (layer.kind === 'tile') {
+        layers.push({
+          id: layer.id,
+          role: layer.role,
+          tiles: [...layer.tiles],
+          columns: map.columns,
+          rows: map.rows,
+          sheet: 'tileset',
+        });
+      } else if (layer.kind === 'objects') {
+        for (const object of layer.objects) {
+          objects.set(object.id, {
+            id: object.id,
+            sprite: object.sprite,
+            layer: 'objects',
+            position: { ...object.position },
+          });
+        }
+      }
     }
 
     const actors = new Map<string, ActorState>();
@@ -446,22 +420,32 @@ export class WorldSession {
       appearance: 'player',
       layer: 'characters',
       position: { ...this.player.position },
-      facing: this.player.facing,
+      facing: this.player.direction,
       moving: false,
+      animationState: this.player.animationState,
     });
-    for (const patrol of this.world.patrols) {
-      const start = patrol.waypoints[0];
-      if (start === undefined) {
-        continue;
-      }
-      actors.set(patrol.id, {
-        id: patrol.id,
-        appearance: patrol.appearance,
+    for (const npc of this.world.npcs) {
+      actors.set(npc.id, {
+        id: npc.id,
+        appearance: npc.sprite,
         layer: 'npcs',
-        position: { ...start },
-        facing: 'east',
+        position: { ...npc.position },
+        facing: 'south',
         moving: false,
-        name: patrol.name,
+        animationState: 'idle',
+        name: npc.name,
+      });
+    }
+    for (const monster of this.monsterSpawner.monsters) {
+      actors.set(monster.id, {
+        id: monster.id,
+        appearance: monster.definition.sprite,
+        layer: 'monsters',
+        position: { ...monster.position },
+        facing: monster.facing,
+        moving: false,
+        animationState: 'idle',
+        name: monster.name,
       });
     }
 
@@ -473,42 +457,114 @@ export class WorldSession {
       offsetY: 6,
       followActorId: this.player.id,
     });
-    for (const patrol of this.world.patrols) {
-      const start = patrol.waypoints[0];
-      if (start === undefined) {
-        continue;
-      }
-      ui.set(`label:${patrol.id}`, {
-        id: `label:${patrol.id}`,
-        text: patrol.name,
-        position: { ...start },
+    for (const npc of this.world.npcs) {
+      ui.set(`label:${npc.id}`, {
+        id: `label:${npc.id}`,
+        text: npc.name,
+        position: { ...npc.position },
         offsetY: 6,
-        followActorId: patrol.id,
+        followActorId: npc.id,
+      });
+    }
+    for (const monster of this.monsterSpawner.monsters) {
+      ui.set(`label:${monster.id}`, {
+        id: `label:${monster.id}`,
+        text: `${monster.name} · Lv ${monster.definition.level} · ${monster.hp}/${monster.maxHP} HP`,
+        position: { ...monster.position },
+        offsetY: 7,
+        followActorId: monster.id,
       });
     }
 
-    return { layers: [ground], objects, actors, effects: new Map(), ui };
+    return { layers, objects, actors, effects: new Map(), ui };
   }
 
-  /** Replaces the player's actor entry so the diff notices the change (entries are immutable). */
-  private syncPlayerActor(): void {
+  /** Keeps the monster actor layer and its small HP/status labels in sync with runtime entities. */
+  private syncMonsterActors(): void {
+    for (const monster of this.monsterSpawner.monsters) {
+      const animationState: ActorAnimationState =
+        monster.state === 'HURT'
+          ? 'hurt'
+          : monster.state === 'DEAD'
+            ? 'dead'
+            : monster.state === 'ATTACK'
+              ? 'attack'
+              : monster.moving
+                ? 'walk'
+                : 'idle';
+      this.scene.actors.set(monster.id, {
+        id: monster.id,
+        appearance: monster.definition.sprite,
+        layer: 'monsters',
+        position: { ...monster.position },
+        facing: monster.facing,
+        moving: monster.moving,
+        animationState,
+        name: monster.name,
+      });
+      this.scene.ui.set(`label:${monster.id}`, {
+        id: `label:${monster.id}`,
+        text:
+          monster.state === 'DEAD'
+            ? `${monster.name} · down`
+            : `${monster.name} · Lv ${monster.definition.level} · ${monster.hp}/${monster.maxHP} HP`,
+        position: { ...monster.position },
+        offsetY: 7,
+        followActorId: monster.id,
+      });
+    }
+  }
+
+  /** Adds an above-head talk prompt only while an NPC is in range and no dialogue is open. */
+  private syncInteractionPrompt(): void {
+    const promptId = 'npc-interaction-prompt';
+    const nearby = this.npcInteractions.nearbyNpc;
+    const npc =
+      nearby === null ? undefined : this.world.npcs.find((candidate) => candidate.id === nearby.id);
+    if (npc === undefined || this.npcInteractions.isDialogueOpen) {
+      this.scene.ui.delete(promptId);
+      return;
+    }
+
+    this.scene.ui.set(promptId, {
+      id: promptId,
+      text: 'E · Talk',
+      position: { ...npc.position },
+      offsetY: 16,
+      followActorId: npc.id,
+    });
+  }
+
+  /** Replaces the player's actor entry with the render-interpolated position. */
+  private syncPlayerActor(position: Position): void {
     const actor = this.scene.actors.get(this.player.id);
     if (actor === undefined) {
       return;
     }
     this.scene.actors.set(this.player.id, {
       ...actor,
-      position: { ...this.player.position },
-      facing: this.player.facing,
-      moving: this.intent.moving,
+      position: { ...position },
+      facing: this.player.direction,
+      moving: this.player.movementState === 'moving',
+      animationState: this.player.animationState,
     });
   }
 
-  /** Where the camera wants to be: the middle of the character, not its top-left corner. */
-  private cameraTarget(): { x: number; y: number } {
+  /** Blends the last two fixed simulation positions for smooth rendering between 20 Hz steps. */
+  private interpolatedPlayerPosition(): Position {
+    const current = this.player.position;
+    const alpha = Math.max(0, Math.min(1, this.timestep.interpolation));
     return {
-      x: (this.player.position.x + 0.5) * TILE_SIZE,
-      y: (this.player.position.y + 0.5) * TILE_SIZE,
+      x: this.previousPlayerPosition.x + (current.x - this.previousPlayerPosition.x) * alpha,
+      y: this.previousPlayerPosition.y + (current.y - this.previousPlayerPosition.y) * alpha,
+    };
+  }
+
+  /** Where the camera wants to be: the middle of the character, not its top-left corner. */
+  private cameraTarget(position: Position): { x: number; y: number } {
+    return {
+      x: (position.x + 0.5) * TILE_SIZE,
+      y: (position.y + 0.5) * TILE_SIZE,
     };
   }
 
@@ -523,27 +579,12 @@ export class WorldSession {
 
     commands.push({ type: 'camera', camera: this.camera.snapshot });
 
-    for (const patch of this.pendingTileChanges) {
-      commands.push({ type: 'tiles-changed', layerId: patch.layerId, changes: patch.changes });
-    }
-    this.pendingTileChanges.length = 0;
-
     commands.push(...diffScene(this.rendered, this.scene));
 
     this.rendered = snapshotOf(this.scene);
     return commands;
   }
 }
-
-/** Tile index of the fog cloud, from the generated tile sheet. */
-export const FOG_TILE_INDEX = 5;
-
-const DIRECTION_DELTA: Readonly<Record<Direction, { x: number; y: number }>> = {
-  north: { x: 0, y: -1 },
-  east: { x: 1, y: 0 },
-  south: { x: 0, y: 1 },
-  west: { x: -1, y: 0 },
-};
 
 /**
  * Shallow copies the scene maps so the diff compares against what the renderer actually received.
@@ -553,8 +594,8 @@ const DIRECTION_DELTA: Readonly<Record<Direction, { x: number; y: number }>> = {
  */
 function snapshotOf(scene: WorldScene): WorldScene {
   return {
-    // Layers keep their identity: tile edits are sent as `tiles-changed` patches, and copying the
-    // tile array (2 560 numbers for the prototype zone) on every frame would be pure waste.
+    // Layers keep their identity: edits can travel as `tiles-changed` patches, and copying every
+    // map-cell array on each rendered frame would be pure waste.
     layers: [...scene.layers],
     objects: new Map(scene.objects),
     actors: new Map(scene.actors),

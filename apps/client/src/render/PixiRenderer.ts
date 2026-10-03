@@ -4,7 +4,14 @@ import type { TextOptions } from 'pixi.js';
 import { RealmError, TILE_SIZE, visibleTileRange } from '@project-realm/shared';
 import type { CameraState, Logger, TileRange } from '@project-realm/shared';
 import { RENDER_LAYERS } from './scene';
-import type { EffectState, RenderCommand, RenderLayerId, Viewport, WorldUiState } from './scene';
+import type {
+  ActorState,
+  EffectState,
+  RenderCommand,
+  RenderLayerId,
+  Viewport,
+  WorldUiState,
+} from './scene';
 import type { RenderStats, RendererInitOptions, WorldRenderer } from './WorldRenderer';
 import { ActorSprite } from './sprites/ActorSprite';
 import { EffectSprite } from './sprites/EffectSprite';
@@ -30,7 +37,8 @@ const ACTOR_HEAD_OFFSET_PX = SHEETS.actors.frameHeight;
  *
  *   app.stage
  *     └── world            <- the camera transform is applied HERE (position + scale)
- *          ├── ground      <- tile layers, chunked and culled
+ *          ├── ground      <- base tilemap, chunked and culled
+ *          ├── decoration  <- overlay tilemap
  *          ├── objects     <- depth-sorted world objects
  *          ├── characters  <- the player
  *          ├── npcs
@@ -146,7 +154,7 @@ export class PixiRenderer implements WorldRenderer {
     const objects = new ObjectLayerView(textures);
     this.objectLayer = objects;
     // Swap the object layer in at its correct position in the draw order, keeping the placeholder's
-    // index so the stack stays ground -> objects -> characters -> npcs -> effects -> world-ui.
+    // index so ground and decoration render before objects, actors, effects and world labels.
     const index = this.world.getChildIndex(this.layers.objects);
     this.world.removeChildAt(index);
     this.layers.objects = objects;
@@ -169,7 +177,7 @@ export class PixiRenderer implements WorldRenderer {
           this.tileLayers.set(command.layer.id, view);
           this.mapColumns = Math.max(this.mapColumns, view.columns);
           this.mapRows = Math.max(this.mapRows, view.rows);
-          this.layers.ground.addChild(view);
+          this.layers[command.layer.role].addChild(view);
           break;
         }
 
@@ -196,8 +204,16 @@ export class PixiRenderer implements WorldRenderer {
 
         case 'actor-added':
         case 'actor-changed': {
-          const sprite = this.actorSprite(command.actor.id, command.actor.appearance);
-          sprite.applyState(command.actor.position, command.actor.facing, command.actor.moving);
+          const sprite = this.actorSprite(
+            command.actor.id,
+            command.actor.appearance,
+            command.actor.layer,
+          );
+          sprite.applyState(
+            command.actor.position,
+            command.actor.facing,
+            command.actor.animationState,
+          );
           break;
         }
 
@@ -341,18 +357,15 @@ export class PixiRenderer implements WorldRenderer {
 
   // ------------------------------------------------------------------ internals
 
-  private actorSprite(id: string, appearance: string): ActorSprite {
+  private actorSprite(id: string, appearance: string, layer: ActorState['layer']): ActorSprite {
     const existing = this.actorSprites.get(id);
     if (existing !== undefined) {
       return existing;
     }
     const sprite = new ActorSprite(appearance, this.requireTextures());
     this.actorSprites.set(id, sprite);
-    // Client-side actor classification: the player and NPCs occupy separate layers so the player can
-    // never be hidden behind an NPC standing on the same tile. The authoritative version of "who is
-    // an NPC" arrives with the server-driven entities in Phase 5.
-    const layer = id.startsWith('npc:') ? this.layers.npcs : this.layers.characters;
-    layer.addChild(sprite);
+    // Game data, not ID naming conventions, decides whether an actor is a player or an NPC.
+    this.layers[layer].addChild(sprite);
     return sprite;
   }
 

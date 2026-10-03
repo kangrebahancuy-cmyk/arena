@@ -9,7 +9,7 @@ import { PALETTE } from './palette.mjs';
 export const OBJECT_SIZE = 32;
 
 /** Order of the objects inside objects.png. The TypeScript manifest mirrors this list. */
-export const OBJECT_ORDER = ['tree_broad', 'tree_pine', 'bush', 'rock'];
+export const OBJECT_ORDER = ['tree_broad', 'tree_pine', 'bush', 'rock', 'cottage'];
 
 function paintTreeBroad(canvas) {
   // Trunk: 4 px wide, rooted at the bottom-centre of the frame.
@@ -75,11 +75,46 @@ function paintRock(canvas) {
   canvas.outline(PALETTE.outline);
 }
 
+/** A small timber-and-plaster cottage, original art for Greenhaven's village. */
+function paintCottage(canvas) {
+  // Gabled roof, built a row at a time so the silhouette is crisp at native size.
+  for (let y = 3; y <= 18; y += 1) {
+    const halfWidth = Math.min(15, 2 + (y - 3));
+    const x = 16 - halfWidth;
+    const width = halfWidth * 2;
+    const color = y % 4 === 0 ? PALETTE.roofLight : PALETTE.roofBase;
+    canvas.fillRect(x, y, width, 1, color);
+    if (y % 4 === 1) {
+      canvas.fillRect(x + 1, y, width - 2, 1, PALETTE.roofDark);
+    }
+  }
+
+  // Plastered front, timber frame, doorway and two blue-glass windows.
+  canvas.fillRect(8, 14, 16, 16, PALETTE.plaster);
+  canvas.fillRect(8, 14, 2, 16, PALETTE.woodDark);
+  canvas.fillRect(22, 14, 2, 16, PALETTE.woodDark);
+  canvas.fillRect(8, 14, 16, 2, PALETTE.woodDark);
+  canvas.fillRect(8, 28, 16, 2, PALETTE.woodDark);
+  canvas.fillRect(10, 18, 4, 5, PALETTE.window);
+  canvas.fillRect(18, 18, 4, 5, PALETTE.window);
+  canvas.fillRect(11, 18, 1, 5, PALETTE.plaster);
+  canvas.fillRect(10, 20, 4, 1, PALETTE.plaster);
+  canvas.fillRect(19, 18, 1, 5, PALETTE.plaster);
+  canvas.fillRect(18, 20, 4, 1, PALETTE.plaster);
+  canvas.fillRect(14, 21, 4, 9, PALETTE.woodDark);
+  canvas.fillRect(15, 22, 2, 8, PALETTE.woodBase);
+  canvas.set(17, 26, PALETTE.roofLight);
+  canvas.fillRect(6, 17, 2, 12, PALETTE.woodBase);
+  canvas.fillRect(24, 17, 2, 12, PALETTE.woodBase);
+  canvas.outline(PALETTE.outline);
+}
+
 const OBJECT_PAINTERS = {
   tree_broad: paintTreeBroad,
   tree_pine: paintTreePine,
   bush: paintBush,
   rock: paintRock,
+  cottage: paintCottage,
 };
 
 /** objects.png: every world object in one horizontal strip of 32x32 frames. */
