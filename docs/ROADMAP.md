@@ -50,7 +50,7 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 | `npm audit`                                    | 0 kerentanan                                                                                                                                 |
 | Berkas CI                                      | Lolos parser workflow resmi GitHub (0 galat), dan parser terbukti menolak workflow yang salah                                                |
 
-**Belum diverifikasi:** eksekusi di mesin **Windows** sungguhan (sandbox ini Linux) dan eksekusi CI di GitHub. Yang tersedia sebagai dasar: `package-lock.json` memuat binary win32, skrip tidak memakai sintaks khusus POSIX, dan matriks CI menyertakan `windows-latest`. Eksekusi nyata pertama di Windows ada pada Anda; jika ada masalah, lihat [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
+**Belum diverifikasi (saat fase ini ditutup):** eksekusi di mesin **Windows** sungguhan (sandbox ini Linux) dan eksekusi CI di GitHub. Keduanya kemudian terbukti pada Fase 1.5 — lihat tabel bukti di bawah; bila ada masalah di mesin Anda, lihat [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
 
 ## Fase 1.5: Fondasi arsitektur (selesai)
 
