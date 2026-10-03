@@ -1,13 +1,16 @@
+import { LogThresholdSchema, RealmError, createGameConfig } from '@project-realm/shared';
+import type { GameConfig, LogThreshold } from '@project-realm/shared';
 import { z } from 'zod';
 
-const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
-
-export type LogLevel = (typeof LOG_LEVELS)[number];
 export type NodeEnvironment = 'development' | 'test' | 'production';
 
 /**
  * Every environment variable the server reads, with validation and safe defaults.
- * Anything not listed here is ignored, so a typo can never silently change behaviour of another setting.
+ * Anything not listed here is ignored, so a typo can never silently change the behaviour of another
+ * setting.
+ *
+ * The log level vocabulary comes from `@project-realm/shared`, the same list the client validates
+ * against, so "warn" means exactly one thing across the project.
  *
  * SECRETS (database URL, session keys, ...) will be added here in later phases. They are read by the
  * server only and must never be exposed to the browser (the client has its own, public-only config).
@@ -17,7 +20,7 @@ const EnvSchema = z.object({
   // 127.0.0.1 = reachable from this machine only. Containers/servers set HOST=0.0.0.0 explicitly.
   HOST: z.string().trim().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
-  LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+  LOG_LEVEL: LogThresholdSchema.default('info'),
   // Trust X-Forwarded-* headers. Enable ONLY behind a reverse proxy you control, otherwise clients
   // could spoof their IP and dodge rate limits.
   TRUST_PROXY: z.stringbool().default(false),
@@ -31,7 +34,7 @@ export interface AppConfig {
   readonly host: string;
   readonly port: number;
   readonly log: {
-    readonly level: LogLevel;
+    readonly level: LogThreshold;
     /** Human-readable logs for local development; JSON lines everywhere else. */
     readonly pretty: boolean;
   };
@@ -41,12 +44,17 @@ export interface AppConfig {
     readonly max: number;
     readonly windowMs: number;
   };
+  /**
+   * Game rules shared with the client (see `@project-realm/shared`). Today this is the protocol
+   * version reported by `/api/health` and the fixed timestep contract; environment knobs for it
+   * arrive with the simulation that consumes them (Phase 2 / Phase 10).
+   */
+  readonly game: GameConfig;
 }
 
-export class ConfigError extends Error {
+export class ConfigError extends RealmError {
   constructor(message: string) {
-    super(message);
-    this.name = 'ConfigError';
+    super('config_invalid', message, { name: 'ConfigError' });
   }
 }
 
@@ -72,5 +80,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     log: { level: parsed.LOG_LEVEL, pretty: parsed.NODE_ENV === 'development' },
     trustProxy: parsed.TRUST_PROXY,
     rateLimit: { max: parsed.HTTP_RATE_LIMIT_MAX, windowMs: parsed.HTTP_RATE_LIMIT_WINDOW_MS },
+    game: createGameConfig(),
   };
 }

@@ -15,6 +15,7 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 | Fase | Judul                          | Status        |
 | ---- | ------------------------------ | ------------- |
 | 1    | Fondasi proyek                 | **Selesai**   |
+| 1.5  | Fondasi arsitektur             | **Selesai**   |
 | 2    | Rendering 2D                   | Belum dimulai |
 | 3    | Pergerakan pemain              | Belum dimulai |
 | 4    | Dunia, peta, dan tabrakan      | Belum dimulai |
@@ -50,6 +51,37 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 | Berkas CI                                      | Lolos parser workflow resmi GitHub (0 galat), dan parser terbukti menolak workflow yang salah                                                |
 
 **Belum diverifikasi:** eksekusi di mesin **Windows** sungguhan (sandbox ini Linux) dan eksekusi CI di GitHub. Yang tersedia sebagai dasar: `package-lock.json` memuat binary win32, skrip tidak memakai sintaks khusus POSIX, dan matriks CI menyertakan `windows-latest`. Eksekusi nyata pertama di Windows ada pada Anda; jika ada masalah, lihat [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
+
+## Fase 1.5: Fondasi arsitektur (selesai)
+
+**Kenapa ada fase ini.** Fase 1 menghasilkan proyek yang bisa dijalankan, tetapi belum punya _entry point_, konfigurasi bersama, logging, atau penanganan error. Fase ini melengkapinya sebelum ada satu fitur permainan pun, supaya Fase 2-10 tumbuh di atas struktur yang jelas, bukan menumpuk di `main.ts` masing-masing sisi.
+
+**Isi:**
+
+- **Entry point.** `GameClient` (`apps/client/src/game/`) dan `GameServer` (`apps/server/src/game/`) sebagai _composition root_ dengan siklus hidup eksplisit; `main.ts` hanya merakit dan mengurus hal tingkat proses (env, sinyal, exit code).
+- **Sistem konfigurasi.** `GameConfig` di `packages/shared` untuk angka yang wajib sama di kedua sisi; `AppConfig`/`ClientConfig` per aplikasi; skema zod, nilai default aman, objek beku, gagal cepat dengan pesan yang menyebut variabel keliru.
+- **Variabel lingkungan.** Server: `.env` tervalidasi (variabel environment menang). Klien: hanya `VITE_LOG_LEVEL` yang sampai ke browser, divalidasi; `DEV_API_PROXY_TARGET`/`DEV_ALLOWED_HOSTS` hanya dibaca `vite.config.ts`.
+- **Logging.** Level + _core_ logger di `shared/logging/` (satu kosakata, penyaringan sekali, `child()` bertitik); klien menulis ke console dengan Error asli, server memakai pino milik Fastify plus _startup logger_ untuk fase sebelum pino ada.
+- **Penanganan error.** `RealmError` (kode stabil, context, cause) sebagai keluarga error aplikasi; `ApiError` tetap untuk kegagalan satu permintaan; `installGlobalErrorHandlers` di klien; `uncaughtException`/`unhandledRejection` di server; `FatalErrorScreen` saat klien gagal start.
+- **Tipe bersama.** `PlayerState`/`PlayerId`/`PlayerNameSchema`, `Position`, `Direction`, dan tipe protokol (`MessageEnvelope`, `MessageRegistry`, `MessageOf`/`ClientIntent`/`ServerMessage`, `decodeMessageFrame`/`encodeMessageFrame`).
+- **Struktur folder.** Lapisan `game/` di kedua aplikasi; `apps/server/src/app.ts` pindah ke `http/buildApp.ts`; `apps/client/src/app/startApp.ts` digantikan `game/GameClient.ts` + `main.ts`.
+
+**Belum ada (sengaja):** renderer, input, simulasi, tick server, soket WebSocket, registry pesan nyata, akun, dan basis data. Perubahan kontrak yang tidak kompatibel tetap memerlukan kenaikan `PROTOCOL_VERSION`.
+
+**Bukti verifikasi (dijalankan di sandbox Linux, Node 22.22.3):**
+
+| Pemeriksaan                                       | Hasil                                                                                                                                                                                         |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check` (typecheck, lint, format, tes)    | Hijau. **206 tes**: shared 80, server 45, klien 81                                                                                                                                            |
+| `npm run build`                                   | Server: `dist/main.js` 17,7 kB (sourcemap aktif). Klien: JS 99 kB (29 kB gzip), CSS 2,8 kB                                                                                                    |
+| `npm start` (bundel produksi) + `npm run preview` | `/api/health` 200; `/api/nope` 404 dengan bentuk error standar; header `nosniff`/`X-Frame-Options`/`Referrer-Policy` ada; `SIGTERM` → "shutting down" → "game server stopped" → kode keluar 0 |
+| `npm run dev`                                     | Server (`:3001`) dan klien (`:5173`) jalan bersama; `/api/health` benar lewat proxy Vite; log server `game server ready` memuat konfigurasi efektif                                           |
+| Host header (dev server)                          | Nama host sandbox (`*.e2b.app`) diterima (200); nama host asing tetap ditolak 403 (perlindungan DNS-rebinding tidak dimatikan)                                                                |
+| Siklus hidup `GameServer`                         | Tes nyata di port acak: start → `/api/health` via `fetch` → stop (koneksi ditolak) → start kedua ditolak `invalid_state`; port terpakai → `port_unavailable`                                  |
+| Port dipakai                                      | Pesan menyebut nomor port dan langkah berikutnya; status akhir `stopped`, bukan `starting`                                                                                                    |
+| Batas modul (ESLint)                              | Terbukti menggigit: impor `./app` dari lapisan `http` ditolak aturan pelapisan (dan berkas itu berganti nama menjadi `buildApp.ts`)                                                           |
+
+**Belum diverifikasi:** eksekusi di mesin **Windows** sungguhan dan eksekusi CI di GitHub (sandbox ini Linux). Skrip tidak memakai sintaks khusus POSIX, `package-lock.json` memuat binary win32, dan matriks CI menyertakan `windows-latest`.
 
 ## Fase 2: Rendering 2D
 

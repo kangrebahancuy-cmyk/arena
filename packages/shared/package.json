@@ -2,7 +2,7 @@
   "name": "@project-realm/shared",
   "version": "0.1.0",
   "private": true,
-  "description": "Contracts shared by client and server: constants, HTTP contracts and runtime validation schemas.",
+  "description": "Contracts shared by client and server: constants, GameConfig, player/world types, realtime message framing, logging core, error taxonomy, and runtime validation schemas.",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,

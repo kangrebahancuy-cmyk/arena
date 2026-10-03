@@ -17,6 +17,14 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.DEV_API_PROXY_TARGET ?? 'http://127.0.0.1:3001';
   const proxy = { '/api': { target: apiTarget } };
 
+  // Vite answers only to host names it knows (DNS-rebinding protection): IP addresses and
+  // "localhost" always work, anything else must be listed. Hosted dev sandboxes serve the app from a
+  // generated subdomain, hence the default below; add your own with DEV_ALLOWED_HOSTS (comma
+  // separated, e.g. "my-pc.lan,.example.dev").
+  const allowedHosts = ['.e2b.app', ...(env.DEV_ALLOWED_HOSTS ?? '').split(',')]
+    .map((host) => host.trim())
+    .filter((host) => host !== '');
+
   return {
     define: {
       // Public build metadata only (shown on the boot screen).
@@ -26,11 +34,13 @@ export default defineConfig(({ mode }) => {
       // Listen on all interfaces so a phone on the same network can open the dev server.
       host: true,
       port: 5173,
+      allowedHosts,
       proxy,
     },
     preview: {
       host: true,
       port: 4173,
+      allowedHosts,
       proxy,
     },
   };

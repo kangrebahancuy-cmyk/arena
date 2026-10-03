@@ -2,7 +2,7 @@
   "name": "@project-realm/server",
   "version": "0.1.0",
   "private": true,
-  "description": "Authoritative game server: HTTP API today, realtime WebSocket gateway from Phase 10.",
+  "description": "Authoritative game server: GameServer entry point, HTTP API and lifecycle today; game loop and WebSocket gateway from Phase 10.",
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {

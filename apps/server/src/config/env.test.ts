@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION, createGameConfig } from '@project-realm/shared';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from './env';
 
@@ -10,6 +11,8 @@ describe('loadConfig', () => {
       log: { level: 'info', pretty: true },
       trustProxy: false, // never trust forwarded headers by default
       rateLimit: { max: 120, windowMs: 60_000 },
+      // The same shared defaults the client uses, not a second set of numbers.
+      game: createGameConfig(),
     });
   });
 
@@ -31,7 +34,17 @@ describe('loadConfig', () => {
       log: { level: 'warn', pretty: false },
       trustProxy: true,
       rateLimit: { max: 30, windowMs: 5000 },
+      // The same shared defaults the client uses, not a second set of numbers.
+      game: createGameConfig(),
     });
+  });
+
+  it('carries the shared game config, frozen so no part of the game can rewrite the rules', () => {
+    const { game } = loadConfig({});
+
+    expect(game.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(game.simulation.hz).toBeGreaterThan(0);
+    expect(Object.isFrozen(game)).toBe(true);
   });
 
   it('only enables pretty logs in development', () => {
@@ -61,6 +74,8 @@ describe('loadConfig', () => {
 
     expect(act).toThrow(ConfigError);
     expect(act).toThrow(name);
+    // ConfigError is a RealmError, so the code survives structured logging.
+    expect(act).toThrow(expect.objectContaining({ code: 'config_invalid' }));
   });
 
   it('reports every invalid variable at once', () => {

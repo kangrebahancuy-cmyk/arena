@@ -105,7 +105,7 @@ Pengaturan tetap disimpan di berkas `.env` (berkas ini diabaikan git, jangan di-
 copy apps\server\.env.example apps\server\.env
 ```
 
-Di PowerShell: `Copy-Item apps\server\.env.example apps\server\.env`. Lalu edit `apps\server\.env` (misalnya `PORT=3002`). Daftar variabel ada di [ARCHITECTURE.md bagian 10](ARCHITECTURE.md#10-konfigurasi). **Jika Anda mengubah `PORT`, ubah juga `DEV_API_PROXY_TARGET` di `apps\client\.env`** (salin dari `apps\client\.env.example`) agar proxy klien mengarah ke port yang sama.
+Di PowerShell: `Copy-Item apps\server\.env.example apps\server\.env`. Template klien (`apps\client\.env.example`) hanya perlu disalin bila Anda ingin mengubah ambang log di console browser (`VITE_LOG_LEVEL`) atau nama host yang boleh dijawab dev server (`DEV_ALLOWED_HOSTS`). Lalu edit `apps\server\.env` (misalnya `PORT=3002`). Daftar variabel ada di [ARCHITECTURE.md bagian 10](ARCHITECTURE.md#10-sistem-konfigurasi-dan-variabel-lingkungan). **Jika Anda mengubah `PORT`, ubah juga `DEV_API_PROXY_TARGET` di `apps\client\.env`** (salin dari `apps\client\.env.example`) agar proxy klien mengarah ke port yang sama.
 
 Untuk **sekali jalan saja**:
 
@@ -120,6 +120,8 @@ $env:PORT = "3002"; npm run dev:server
 ```
 
 Variabel yang diatur di terminal selalu menang atas isi `.env`.
+
+Variabel `VITE_*` (mis. `VITE_LOG_LEVEL=debug`) **ikut terkirim ke browser setiap pemain** — jangan pernah menaruh rahasia di sana. Angka yang harus sama di klien dan server (`protocolVersion`, `simulation.hz`) tidak diatur lewat `.env`; keduanya berasal dari satu `GameConfig` di `packages/shared`.
 
 ## 7. Membuka dari ponsel (satu Wi-Fi)
 
@@ -148,6 +150,7 @@ Beberapa catatan:
 | Browser menampilkan **Offline** dan "The server is not responding properly (HTTP 500/502)" | Server game tidak berjalan, crash, atau `DEV_API_PROXY_TARGET` salah port  | Lihat baris `[server]` di terminal. Jalankan `npm run dev` (bukan hanya `dev:client`). Cocokkan `PORT` dengan `DEV_API_PROXY_TARGET`                                          |
 | Browser menampilkan "Could not reach the server"                                           | Dev server klien sendiri tidak berjalan, atau jaringan terputus            | Pastikan `npm run dev` masih aktif dan alamat benar                                                                                                                           |
 | "Update required" di browser                                                               | Halaman lama di tab dengan server yang lebih baru (versi protokol berbeda) | Klik **Reload page** (atau Ctrl+F5)                                                                                                                                           |
+| Log browser terlalu ramai / terlalu sepi                                                   | `VITE_LOG_LEVEL` bawaan: `debug` di dev, `info` di build produksi          | Salin `apps\client\.env.example` menjadi `apps\client\.env` lalu setel `VITE_LOG_LEVEL` (mis. `warn` atau `silent`)                                                           |
 | Jendela "Windows Security Alert" untuk Node.js                                             | Firewall bertanya karena dev server mendengarkan jaringan                  | Pilih **Private networks** saja. Jika Anda menolak, `localhost` tetap bekerja; hanya akses dari ponsel yang terblokir                                                         |
 | `npm install` sangat lambat, atau galat `EPERM` / "operation not permitted"                | Antivirus atau OneDrive mengunci ribuan berkas kecil di `node_modules`     | Klon ke folder di luar OneDrive (mis. `C:\dev`). Coba lagi. Pertimbangkan mengecualikan folder proyek dari pemindaian real-time antivirus                                     |
 | Galat "filename too long" / "path too long" saat clone                                     | Batas panjang path Windows                                                 | `git config --global core.longpaths true`, lalu klon lagi (dan pakai path pendek seperti `C:\dev\arena`)                                                                      |
