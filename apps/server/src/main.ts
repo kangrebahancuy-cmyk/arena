@@ -1,9 +1,19 @@
+import { isRealmError } from '@project-realm/shared';
+import pkg from '../package.json' with { type: 'json' };
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import pkg from '../package.json' with { type: 'json' };
-import { buildApp } from './app';
 import { ConfigError, loadConfig } from './config/env';
 import type { AppConfig } from './config/env';
+import { createStartupLogger } from './core/logger';
+import { GameServer } from './game/GameServer';
+
+/**
+ * Entry point of the game server.
+ *
+ * It wires the process to the game: read configuration, build the server, translate process signals
+ * and fatal errors into a clean shutdown, and exit with a code a supervisor can act on. Everything
+ * else lives in GameServer and the modules below it.
+ */
 
 /** Upper bound for a graceful shutdown before the process is forced to exit. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -21,21 +31,16 @@ function loadConfigOrExit(): AppConfig {
     return loadConfig();
   } catch (error) {
     if (error instanceof ConfigError) {
-      console.error(error.message);
+      // Nothing is configured yet, so the level cannot come from configuration: report and stop.
+      createStartupLogger('info').fatal(error.message, { code: error.code });
       process.exit(1);
     }
     throw error;
   }
 }
 
-function errorCode(error: unknown): string | undefined {
-  return error instanceof Error && 'code' in error && typeof error.code === 'string'
-    ? error.code
-    : undefined;
-}
-
 const config = loadConfigOrExit();
-const app = await buildApp({ config, version: pkg.version });
+const server = new GameServer({ config, version: pkg.version });
 
 let shuttingDown = false;
 
@@ -44,21 +49,22 @@ async function shutdown(reason: string, exitCode: number): Promise<void> {
     return;
   }
   shuttingDown = true;
-  app.log.info({ reason }, 'shutting down');
+
+  const log = server.logger;
+  log.info('shutting down', { reason });
 
   const forceExit = setTimeout(() => {
-    app.log.error('graceful shutdown timed out, forcing exit');
+    log.error('graceful shutdown timed out, forcing exit');
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceExit.unref();
 
   try {
-    // Later phases hook in here (via Fastify's onClose): stop the game loop, flush persistence, close the DB.
-    await app.close();
-    app.log.info('shutdown complete');
+    await server.stop();
+    log.info('shutdown complete');
     process.exit(exitCode);
   } catch (error) {
-    app.log.error({ err: error }, 'error during shutdown');
+    log.error('error during shutdown', undefined, error);
     process.exit(1);
   }
 }
@@ -76,28 +82,26 @@ for (const signal of signals) {
 // After an unexpected error the process state is unknown: log it, close cleanly, exit non-zero so a
 // supervisor restarts the server.
 process.on('uncaughtException', (error) => {
-  app.log.fatal({ err: error }, 'uncaught exception');
+  server.logger.fatal('uncaught exception', undefined, error);
   void shutdown('uncaughtException', 1);
 });
 process.on('unhandledRejection', (reason) => {
-  app.log.fatal({ err: reason }, 'unhandled promise rejection');
+  server.logger.fatal('unhandled promise rejection', undefined, reason);
   void shutdown('unhandledRejection', 1);
 });
 
 try {
-  await app.listen({ host: config.host, port: config.port });
+  await server.start();
 } catch (error) {
-  const code = errorCode(error);
-  if (code === 'EADDRINUSE') {
-    app.log.fatal(
-      `Port ${config.port} is already in use. Stop the other process or set PORT in apps/server/.env.`,
-    );
-  } else if (code === 'EACCES') {
-    app.log.fatal(
-      `Not allowed to listen on ${config.host}:${config.port}. On Windows the port may be reserved by the system: choose another PORT (see docs/SETUP-WINDOWS.md).`,
-    );
+  const log = server.logger;
+  if (isRealmError(error)) {
+    // GameServer already turned this into a message with a concrete next step.
+    log.fatal(error.message, { code: error.code });
   } else {
-    app.log.fatal({ err: error }, 'failed to start the server');
+    log.fatal('failed to start the server', undefined, error);
   }
+
+  // Closing flushes the HTTP app (and its logger) before the process disappears.
+  await server.stop();
   process.exit(1);
 }

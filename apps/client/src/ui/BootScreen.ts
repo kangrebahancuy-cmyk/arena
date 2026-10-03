@@ -1,5 +1,5 @@
 import { GAME_TITLE } from '@project-realm/shared';
-import type { BootState } from '../boot/bootController';
+import type { ClientState } from '../boot/clientState';
 import type { ClientConfig } from '../config/clientConfig';
 import { el } from './dom';
 import { describeOfflineReason, formatDuration } from './format';
@@ -12,12 +12,15 @@ export interface BootScreenActions {
 type Tone = 'info' | 'ok' | 'warn' | 'bad';
 
 function assertNever(value: never): never {
-  throw new Error(`Unhandled boot state: ${JSON.stringify(value)}`);
+  throw new Error(`Unhandled client state: ${JSON.stringify(value)}`);
 }
 
 /**
  * The first screen a player sees: it reports the REAL result of talking to the server.
- * It is a view only: all logic lives in BootController, which the screen merely renders.
+ *
+ * It is a view only — all logic lives in GameClient (and, below it, BootController), which the screen
+ * merely renders. Nothing on this screen is invented: every value shown came from the server's answer
+ * or from this build, and the note at the bottom is there because the world does not exist yet.
  */
 export class BootScreen {
   private readonly serverPill: HTMLElement;
@@ -28,7 +31,7 @@ export class BootScreen {
   private readonly reloadButton: HTMLButtonElement;
 
   constructor(root: HTMLElement, config: ClientConfig, actions: BootScreenActions) {
-    this.serverPill = el('span', { class: 'pill pill--info' }, 'Checking…');
+    this.serverPill = el('span', { class: 'pill pill--info' }, 'Starting…');
     this.serverDetail = el('span', { class: 'detail' });
     this.protocolValue = el('dd', {}, '—');
 
@@ -74,15 +77,31 @@ export class BootScreen {
           el('div', { class: 'row' }, el('dt', {}, 'Protocol'), this.protocolValue),
         ),
         this.actionsRow,
-        el('p', { class: 'note' }, 'Foundation build: the game world is not available yet.'),
+        el(
+          'p',
+          { class: 'note' },
+          'Foundation build: there is no world, no gameplay and no realtime connection yet.',
+        ),
       ),
     );
 
     root.replaceChildren(screen);
   }
 
-  render(state: BootState): void {
+  render(state: ClientState): void {
     switch (state.phase) {
+      case 'starting':
+        this.show('info', 'Starting…', 'Preparing the client');
+        this.protocolValue.textContent = '—';
+        this.setActions({ retry: false, reload: false });
+        return;
+
+      case 'stopped':
+        this.show('warn', 'Stopped', 'The client was stopped. Reload the page to start it again.');
+        this.protocolValue.textContent = '—';
+        this.setActions({ retry: false, reload: true });
+        return;
+
       case 'checking':
         this.show(
           'info',

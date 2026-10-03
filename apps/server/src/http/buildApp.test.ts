@@ -1,9 +1,9 @@
 import { ErrorResponseSchema, HEALTH_PATH, HealthResponseSchema } from '@project-realm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildApp } from './app';
-import { loadConfig } from './config/env';
-import type { Clock } from './core/clock';
+import { buildApp } from './buildApp';
+import { loadConfig } from '../config/env';
+import type { Clock } from '../core/clock';
 
 const START = '2026-10-02T12:00:00.000Z';
 

@@ -41,3 +41,9 @@ jobs:
 
       # Proves that the production bundles (server and client) can be built.
       - run: npm run build
+
+      # Proves that the committed prototype art is exactly what the generator produces: a failing
+      # diff here means someone edited a PNG by hand or changed the generator without regenerating
+      # (the client would then refuse to draw frames that no longer fit their sheet).
+      - name: Check generated assets are up to date
+        run: npm run assets && git diff --exit-code -- apps/client/public/assets

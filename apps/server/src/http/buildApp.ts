@@ -1,11 +1,11 @@
 import Fastify from 'fastify';
 import type { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
-import type { AppConfig } from './config/env';
-import { systemClock } from './core/clock';
-import type { Clock } from './core/clock';
-import { errorBody, errorCodeForStatus } from './http/errors';
-import { registerSecurity } from './http/plugins/security';
-import { registerHealthRoute } from './http/routes/health';
+import type { AppConfig } from '../config/env';
+import { systemClock } from '../core/clock';
+import type { Clock } from '../core/clock';
+import { errorBody, errorCodeForStatus } from './errors';
+import { registerSecurity } from './plugins/security';
+import { registerHealthRoute } from './routes/health';
 
 /** Hard cap on request bodies. Every JSON payload planned (auth, character creation) is tiny. */
 const HTTP_BODY_LIMIT_BYTES = 16 * 1024;
@@ -45,10 +45,12 @@ function buildLoggerOptions(config: AppConfig): LoggerOption {
 }
 
 /**
- * Composition root of the HTTP application.
+ * Composition root of the HTTP application. The game server (`game/GameServer.ts`) owns it; this
+ * module only *builds* the app (no `listen()`), so tests can drive it with `app.inject()` and the
+ * lifecycle decides when to start accepting connections.
  *
- * It only *builds* the app (no `listen()`), so tests can drive it with `app.inject()` and the real
- * entry point (`main.ts`) decides when to start accepting connections.
+ * The file is named after the function it exports on purpose: a file called "app.ts" would collide
+ * with the layer rule in eslint.config.js that forbids importing the "app" path from this layer.
  *
  * New features plug in here as small, self-contained modules, e.g. `registerXxxRoutes(app, deps)`.
  * Phase 10 adds the WebSocket gateway; Phase 11 adds auth and the database adapters (see `ports/`).
@@ -83,7 +85,14 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     return reply.status(statusCode).send(errorBody(errorCodeForStatus(statusCode), error.message));
   });
 
-  registerHealthRoute(app, { clock, startedAt: clock.now(), version });
+  // The health route reports the protocol version from the effective game config, so what a client
+  // handshakes against is always what this server actually runs.
+  registerHealthRoute(app, {
+    clock,
+    startedAt: clock.now(),
+    version,
+    protocolVersion: config.game.protocolVersion,
+  });
 
   return app;
 }

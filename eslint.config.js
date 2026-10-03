@@ -16,8 +16,11 @@ import tseslint from 'typescript-eslint';
  *
  * Layering INSIDE each app uses the same mechanism. A layer may import only from layers to its right:
  *
- *   client:  app -> ui -> boot -> net -> core      (config and shared are usable from anywhere)
- *   server:  main -> app -> http -> config | core | ports
+ *   client:  main -> game -> ui -> boot -> render -> net -> core   (config and shared are usable anywhere)
+ *   server:  main -> game -> http -> config | core | ports
+ *
+ * "game" holds the entry points (GameClient / GameServer): they may use everything below them, and
+ * nothing below them may import back up.
  *
  * Dependencies point one way only, so a lower layer can be replaced or tested without the layers above.
  */
@@ -97,14 +100,26 @@ export default defineConfig(
     },
   },
 
-  // --- Layering inside the client: app -> ui -> boot -> net -> core --------------------------
+  // The browser console belongs to one module: it is the only place where the log level can be
+  // honoured consistently, and where a message can be formatted for devtools.
+  {
+    files: ['apps/client/src/core/logger.ts'],
+    rules: { 'no-console': 'off' },
+  },
+
+  // --- Layering inside the client: main -> game -> ui -> boot -> net -> core ------------------
   // (A rule set for a more specific `files` glob REPLACES the one above, so the base patterns repeat.)
   {
     files: ['apps/client/src/core/**/*.ts', 'apps/client/src/config/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('core/config', ['net', 'boot', 'ui', 'app'])] },
+        {
+          patterns: [
+            ...CLIENT_BASE,
+            mayNotImport('core/config', ['net', 'boot', 'render', 'ui', 'game']),
+          ],
+        },
       ],
     },
   },
@@ -113,7 +128,18 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('net', ['boot', 'ui', 'app'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('net', ['boot', 'render', 'ui', 'game'])] },
+      ],
+    },
+  },
+  {
+    // The renderer knows about images, the GPU and the scene description - nothing above it. A
+    // renderer that could reach the boot handshake or the UI would no longer be replaceable.
+    files: ['apps/client/src/render/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...CLIENT_BASE, mayNotImport('render', ['net', 'boot', 'ui', 'game'])] },
       ],
     },
   },
@@ -122,21 +148,23 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('boot', ['ui', 'app'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('boot', ['render', 'ui', 'game'])] },
       ],
     },
   },
   {
+    // The UI layer may describe what it shows (including renderer types such as asset progress), but
+    // it must never drive the game: data flows in through methods, actions flow out through callbacks.
     files: ['apps/client/src/ui/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['app'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['net', 'game'])] },
       ],
     },
   },
 
-  // --- Layering inside the server: main -> app -> http -> config | core | ports ---------------
+  // --- Layering inside the server: main -> game -> http -> config | core | ports --------------
   {
     files: [
       'apps/server/src/core/**/*.ts',
@@ -146,7 +174,12 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...SERVER_BASE, mayNotImport('core/config/ports', ['http', 'app', 'main'])] },
+        {
+          patterns: [
+            ...SERVER_BASE,
+            mayNotImport('core/config/ports', ['http', 'game', 'app', 'main']),
+          ],
+        },
       ],
     },
   },
@@ -155,7 +188,16 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...SERVER_BASE, mayNotImport('http', ['app', 'main'])] },
+        { patterns: [...SERVER_BASE, mayNotImport('http', ['game', 'app', 'main'])] },
+      ],
+    },
+  },
+  {
+    files: ['apps/server/src/game/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...SERVER_BASE, mayNotImport('game', ['main'])] },
       ],
     },
   },

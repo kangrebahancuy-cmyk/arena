@@ -2,10 +2,12 @@
 import type { HealthResponse } from '@project-realm/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootState } from '../boot/bootController';
-import type { ClientConfig } from '../config/clientConfig';
+import { readClientConfig } from '../config/clientConfig';
 import { BootScreen } from './BootScreen';
 
-const CONFIG: ClientConfig = { appVersion: '0.1.0', isDevelopmentBuild: true };
+// Built through the real configuration reader, so the screen is tested against the config the app
+// actually produces (and a new required field surfaces here immediately).
+const CONFIG = readClientConfig({ DEV: true }, '0.1.0');
 
 function health(overrides: Partial<HealthResponse> = {}): HealthResponse {
   return {
@@ -59,7 +61,30 @@ describe('BootScreen', () => {
   it('announces server status through a live region (role="status")', () => {
     const { status } = setup();
 
-    expect(status().textContent).toContain('Checking…');
+    expect(status().textContent).toContain('Starting…');
+  });
+
+  it('says plainly that the world does not exist yet', () => {
+    const { root } = setup();
+
+    expect(root.textContent).toContain('no world, no gameplay and no realtime connection yet');
+  });
+
+  it('shows the startup phase before the first request goes out', () => {
+    const { screen, status, visibleButtons } = setup();
+
+    screen.render({ phase: 'starting' });
+    expect(status().textContent).toContain('Preparing the client');
+    expect(visibleButtons()).toEqual([]);
+  });
+
+  it('offers a reload (and nothing else) once the client has been stopped', () => {
+    const { screen, status, visibleButtons } = setup();
+
+    screen.render({ phase: 'stopped' });
+
+    expect(status().textContent).toContain('Stopped');
+    expect(visibleButtons()).toEqual(['Reload page']);
   });
 
   it('shows progress while checking, including the attempt number after a failure', () => {

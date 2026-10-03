@@ -1,4 +1,4 @@
-import { HEALTH_PATH, PROTOCOL_VERSION, SERVER_SERVICE_NAME } from '@project-realm/shared';
+import { HEALTH_PATH, SERVER_SERVICE_NAME } from '@project-realm/shared';
 import type { HealthResponse } from '@project-realm/shared';
 import type { FastifyInstance } from 'fastify';
 import type { Clock } from '../../core/clock';
@@ -7,6 +7,8 @@ export interface HealthRouteDeps {
   readonly clock: Clock;
   readonly startedAt: Date;
   readonly version: string;
+  /** From the effective game config, so the handshake reports what this server really runs. */
+  readonly protocolVersion: number;
 }
 
 /**
@@ -25,7 +27,7 @@ export function registerHealthRoute(app: FastifyInstance, deps: HealthRouteDeps)
       status: 'ok',
       service: SERVER_SERVICE_NAME,
       version: deps.version,
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: deps.protocolVersion,
       uptimeSeconds: Math.round(uptimeMs) / 1000,
       serverTime: now.toISOString(),
     };

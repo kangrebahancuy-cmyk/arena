@@ -15,7 +15,8 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 | Fase | Judul                          | Status        |
 | ---- | ------------------------------ | ------------- |
 | 1    | Fondasi proyek                 | **Selesai**   |
-| 2    | Rendering 2D                   | Belum dimulai |
+| 1.5  | Fondasi arsitektur             | **Selesai**   |
+| 2    | Rendering 2D                   | **Selesai**   |
 | 3    | Pergerakan pemain              | Belum dimulai |
 | 4    | Dunia, peta, dan tabrakan      | Belum dimulai |
 | 5    | NPC dan monster                | Belum dimulai |
@@ -49,14 +50,63 @@ Proyek ini dibangun **satu fase pada satu waktu**. Fase berikutnya dimulai hanya
 | `npm audit`                                    | 0 kerentanan                                                                                                                                 |
 | Berkas CI                                      | Lolos parser workflow resmi GitHub (0 galat), dan parser terbukti menolak workflow yang salah                                                |
 
-**Belum diverifikasi:** eksekusi di mesin **Windows** sungguhan (sandbox ini Linux) dan eksekusi CI di GitHub. Yang tersedia sebagai dasar: `package-lock.json` memuat binary win32, skrip tidak memakai sintaks khusus POSIX, dan matriks CI menyertakan `windows-latest`. Eksekusi nyata pertama di Windows ada pada Anda; jika ada masalah, lihat [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
+**Belum diverifikasi (saat fase ini ditutup):** eksekusi di mesin **Windows** sungguhan (sandbox ini Linux) dan eksekusi CI di GitHub. Keduanya kemudian terbukti pada Fase 1.5 — lihat tabel bukti di bawah; bila ada masalah di mesin Anda, lihat [SETUP-WINDOWS.md](SETUP-WINDOWS.md).
 
-## Fase 2: Rendering 2D
+## Fase 1.5: Fondasi arsitektur (selesai)
 
-- **Tujuan:** menggambar dunia 2D di browser.
-- **Isi:** modul `render/` di klien; game loop (langkah tetap untuk logika, interpolasi untuk gambar); kamera; pemuatan aset; canvas yang responsif di desktop dan ponsel (termasuk _device pixel ratio_ dan orientasi).
-- **Selesai bila:** sebuah area tile dengan sprite orisinal tampil lancar di desktop dan ponsel, dan loop render bisa dites tanpa browser.
-- **Perlu diputuskan:** renderer (kandidat PixiJS); **siapa yang membuat aset visual** dan dari mana asal tile/sprite pertama (lihat [ORIGINALITY.md](ORIGINALITY.md): aset buatan sendiri, atau yang berlisensi jelas dan tercatat); tes otomatis berbasis browser (Playwright).
+**Kenapa ada fase ini.** Fase 1 menghasilkan proyek yang bisa dijalankan, tetapi belum punya _entry point_, konfigurasi bersama, logging, atau penanganan error. Fase ini melengkapinya sebelum ada satu fitur permainan pun, supaya Fase 2-10 tumbuh di atas struktur yang jelas, bukan menumpuk di `main.ts` masing-masing sisi.
+
+**Isi:**
+
+- **Entry point.** `GameClient` (`apps/client/src/game/`) dan `GameServer` (`apps/server/src/game/`) sebagai _composition root_ dengan siklus hidup eksplisit; `main.ts` hanya merakit dan mengurus hal tingkat proses (env, sinyal, exit code).
+- **Sistem konfigurasi.** `GameConfig` di `packages/shared` untuk angka yang wajib sama di kedua sisi; `AppConfig`/`ClientConfig` per aplikasi; skema zod, nilai default aman, objek beku, gagal cepat dengan pesan yang menyebut variabel keliru.
+- **Variabel lingkungan.** Server: `.env` tervalidasi (variabel environment menang). Klien: hanya `VITE_LOG_LEVEL` yang sampai ke browser, divalidasi; `DEV_API_PROXY_TARGET`/`DEV_ALLOWED_HOSTS` hanya dibaca `vite.config.ts`.
+- **Logging.** Level + _core_ logger di `shared/logging/` (satu kosakata, penyaringan sekali, `child()` bertitik); klien menulis ke console dengan Error asli, server memakai pino milik Fastify plus _startup logger_ untuk fase sebelum pino ada.
+- **Penanganan error.** `RealmError` (kode stabil, context, cause) sebagai keluarga error aplikasi; `ApiError` tetap untuk kegagalan satu permintaan; `installGlobalErrorHandlers` di klien; `uncaughtException`/`unhandledRejection` di server; `FatalErrorScreen` saat klien gagal start.
+- **Tipe bersama.** `PlayerState`/`PlayerId`/`PlayerNameSchema`, `Position`, `Direction`, dan tipe protokol (`MessageEnvelope`, `MessageRegistry`, `MessageOf`/`ClientIntent`/`ServerMessage`, `decodeMessageFrame`/`encodeMessageFrame`).
+- **Struktur folder.** Lapisan `game/` di kedua aplikasi; `apps/server/src/app.ts` pindah ke `http/buildApp.ts`; `apps/client/src/app/startApp.ts` digantikan `game/GameClient.ts` + `main.ts`.
+
+**Belum ada (sengaja):** renderer, input, simulasi, tick server, soket WebSocket, registry pesan nyata, akun, dan basis data. Perubahan kontrak yang tidak kompatibel tetap memerlukan kenaikan `PROTOCOL_VERSION`.
+
+**Bukti verifikasi (dijalankan di sandbox Linux, Node 22.22.3):**
+
+| Pemeriksaan                                       | Hasil                                                                                                                                                                                         |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check` (typecheck, lint, format, tes)    | Hijau. **206 tes**: shared 80, server 45, klien 81                                                                                                                                            |
+| `npm run build`                                   | Server: `dist/main.js` 17,7 kB (sourcemap aktif). Klien: JS 99 kB (29 kB gzip), CSS 2,8 kB                                                                                                    |
+| `npm start` (bundel produksi) + `npm run preview` | `/api/health` 200; `/api/nope` 404 dengan bentuk error standar; header `nosniff`/`X-Frame-Options`/`Referrer-Policy` ada; `SIGTERM` → "shutting down" → "game server stopped" → kode keluar 0 |
+| `npm run dev`                                     | Server (`:3001`) dan klien (`:5173`) jalan bersama; `/api/health` benar lewat proxy Vite; log server `game server ready` memuat konfigurasi efektif                                           |
+| Host header (dev server)                          | Nama host sandbox (`*.e2b.app`) diterima (200); nama host asing tetap ditolak 403 (perlindungan DNS-rebinding tidak dimatikan)                                                                |
+| Siklus hidup `GameServer`                         | Tes nyata di port acak: start → `/api/health` via `fetch` → stop (koneksi ditolak) → start kedua ditolak `invalid_state`; port terpakai → `port_unavailable`                                  |
+| Port dipakai                                      | Pesan menyebut nomor port dan langkah berikutnya; status akhir `stopped`, bukan `starting`                                                                                                    |
+| Batas modul (ESLint)                              | Terbukti menggigit: impor `./app` dari lapisan `http` ditolak aturan pelapisan (dan berkas itu berganti nama menjadi `buildApp.ts`)                                                           |
+
+**Belum diverifikasi:** eksekusi di mesin **Windows** sungguhan dan eksekusi CI di GitHub (sandbox ini Linux). Skrip tidak memakai sintaks khusus POSIX, `package-lock.json` memuat binary win32, dan matriks CI menyertakan `windows-latest`.
+
+## Fase 2: Rendering 2D (selesai)
+
+- **Tujuan:** menggambar dunia 2D di browser, tanpa ada fitur permainan yang ikut dibuat.
+- **Yang dibangun:** renderer PixiJS 8 (WebGL) dengan loop berbasis delta time, kamera yang mengikuti pemain dan tidak keluar peta, koordinat dunia/layar, penanganan `devicePixelRatio` dan resize, sistem pemuatan aset dengan progres sungguhan, sistem lapisan (ground → objects → characters → npcs → effects → world-ui), satu zona prototipe, HUD debug, serta generator aset orisinal di repo ([ASSETS.md](ASSETS.md)).
+- **Selesai bila:** area tile dengan sprite orisinal tampil lancar di desktop dan ponsel, dan loop render bisa dites tanpa browser — **terpenuhi**: 167 tes klien (21 berkas) berjalan di Node/happy-dom tanpa GPU, `npm run check` dan `npm run build` hijau.
+- **Keputusan yang diminta sebelumnya:** renderer = **PixiJS 8** (disetujui pemilik proyek); aset = **skrip generator di repo** (bukan aset pihak ketiga); tes browser otomatis (Playwright) **ditunda** sesuai keputusan yang sama.
+
+**Yang tidak dikerjakan (sengaja):** pertarungan, inventori, quest, basis data, dan multiplayer tidak disentuh di fase ini. Klien juga **tidak** berpura-pura punya dunia dari server: sesi dunia bersifat lokal, diberi label jelas di layar, dan hanya menyala setelah handshake `/api/health` berhasil.
+
+| Yang diklaim                                  | Cara membuktikannya                                                                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Kanvas 2D menampilkan dunia                   | `WorldStage` + `PixiRenderer`; tes `WorldStage.test.ts` (renderer palsu, tanpa GPU) menegakkan urutan init/tick/resize/stop     |
+| Loop memakai delta time                       | `GameLoop` + `FixedTimestep` bersama; tes klien menutup kasus stall, delta negatif, dan fps tersaring                           |
+| Kamera mengikuti pemain dan tidak keluar peta | `Camera` + `clampToMap`; tes `WorldSession.test.ts` dan `packages/shared/src/render/camera.test.ts`                             |
+| Koordinat dunia dan layar terdefinisi         | `packages/shared/src/render/camera.ts` (`worldToScreen`, `screenToWorld`, `visibleTileRange`) + tesnya                          |
+| Resize tidak merusak tampilan                 | `WorldStage.handleResize()` menyerahkan ukuran baru ke renderer **dan** kamera; dites                                           |
+| `devicePixelRatio` ditangani                  | resolusi dibatasi `renderer.maxPixelRatio` (default 2); dites                                                                   |
+| Pemuatan aset dasar                           | `AssetLoader` dengan `loadTexture` yang disuntikkan, progres nyata, dan validasi frame terhadap tekstur; dites                  |
+| Lapisan render modular                        | `RENDER_LAYERS` + `RenderCommand` + `diffScene`; tes diff memastikan tak ada perintah yang dikirim untuk state yang tak berubah |
+| Arsitektur siap untuk tilemap                 | `GameMapSchema` + `buildTileLayer` di `shared/protocol/world.ts` (kolom/baris, spawn, indeks tile ≥ -1) + tes                   |
+| Tidak ada error saat render                   | typecheck, lint, dan 167 tes klien hijau; jalur kegagalan start menampilkan alasan dan membersihkan dirinya sendiri             |
+| Aset orisinal, bukan dari game lain           | [ASSETS.md](ASSETS.md): semua piksel digambar `scripts/assets/*.mjs` dari palet proyek sendiri                                  |
+
+**Catatan verifikasi:** tidak ada browser di sandbox pengembangan, jadi penerimaan di browser (dunia benar-benar terlihat, kamera terasa mengikuti, resize aman) dikonfirmasi pemilik proyek dengan membuka `npm run dev`; tes otomatis berbasis browser tetap ditunda.
 
 ## Fase 3: Pergerakan pemain
 
