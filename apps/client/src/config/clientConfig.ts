@@ -16,11 +16,28 @@ import { z } from 'zod';
  * The server address is deliberately absent: the client always calls its own origin ("/api/...") and
  * a dev proxy or reverse proxy routes the request to the game server (see vite.config.ts).
  */
+/** Presentation settings of the world renderer. NOT shared rules: the server never draws anything. */
+export interface ClientRendererConfig {
+  /** Canvas background, seen before the first frame and behind the map's edges. */
+  readonly background: string;
+  /** Nearest-neighbour scaling by default: the prototype art is pixel art. */
+  readonly pixelated: boolean;
+  /**
+   * Ceiling for the device pixel ratio the renderer draws at.
+   *
+   * A 3x display means 9 times the pixels of 1x per frame; on a phone that is the difference between a
+   * smooth game and a warm hand. 2 is the deliberate compromise: crisp on every mainstream display,
+   * half the fill rate of the worst case.
+   */
+  readonly maxPixelRatio: number;
+}
+
 export interface ClientConfig {
   readonly appVersion: string;
   readonly isDevelopmentBuild: boolean;
   readonly logLevel: LogThreshold;
   readonly game: GameConfig;
+  readonly renderer: ClientRendererConfig;
 }
 
 /** Server address is never a client setting; a typo in an env var must not be able to change it. */
@@ -75,5 +92,12 @@ export function readClientConfig(
       parsed.data.VITE_LOG_LEVEL ??
       (isDevelopmentBuild ? DEVELOPMENT_LOG_LEVEL : PRODUCTION_LOG_LEVEL),
     game: createGameConfig(),
+    // Presentation constants rather than environment variables: there is nothing per-machine about
+    // them, and every switch added to .env is another way for a build to be configured wrongly.
+    renderer: {
+      background: '#0a0d18',
+      pixelated: true,
+      maxPixelRatio: 2,
+    },
   };
 }

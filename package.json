@@ -19,6 +19,7 @@
     "build": "npm run typecheck && npm run build -w apps/server && npm run build -w apps/client",
     "start": "npm run start -w apps/server",
     "preview": "npm run preview -w apps/client",
+    "assets": "node scripts/assets/index.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

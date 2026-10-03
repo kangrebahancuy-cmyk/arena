@@ -18,11 +18,12 @@ Dokumen ini menjelaskan **bagaimana sistem disusun dan kenapa**. Daftar teknolog
 ┌──────────────────────────────────┐          ┌────────────────────────────────────────┐
 │  Browser  (apps/client)          │   HTTP   │  Game server  (apps/server)            │
 │                                  │ ───────▶ │  GameServer (game/)                    │
-│  main ▸ game ▸ ui ▸ boot ▸ net   │  /api/* │   ├─ http/   Fastify, rute, keamanan   │
-│                 ▸ core           │ ◀─────── │   ├─ config/ env tervalidasi           │
+│  main ▸ game ▸ ui ▸ boot ▸       │  /api/* │   ├─ http/   Fastify, rute, keamanan   │
+│         render ▸ net ▸ core      │ ◀─────── │   ├─ config/ env tervalidasi           │
 │  GameClient (game/)              │   JSON   │   ├─ core/   clock, logger, lifecycle  │
 │                                  │          │   ├─ game/   GameServer, tick (Fase 10)│
-│  Fase 2+: renderer, input, state │          │   └─ ports/  interface saja (TODO)     │
+│  render/  PixiJS, kamera, aset   │          │   └─ ports/  interface saja (TODO)     │
+│  Fase 3+: input, gerak, state    │          │                                        │
 └───────────────┬──────────────────┘          └───────────────────┬────────────────────┘
                 │ selalu same-origin                              │ adapter: Fase 11-12
                 ▼                                                 ▼
@@ -116,9 +117,11 @@ npm workspaces menaikkan semua paket ke `node_modules` root, sehingga impor terl
 Sebuah lapisan hanya boleh mengimpor dari lapisan **di sebelah kanannya**. `config` dan `shared` boleh dipakai dari mana saja.
 
 ```
-klien :  main ──▶ game ──▶ ui ──▶ boot ──▶ net ──▶ core
+klien :  main ──▶ game ──▶ ui ──▶ boot ──▶ render ──▶ net ──▶ core
 server:  main ──▶ game ──▶ http ──▶ config | core | ports
 ```
+
+`render` (renderer, kamera, tekstur, deskripsi scene) berada **di bawah** `ui` dan `boot`: renderer tidak boleh tahu apa-apa soal handshake atau layar. `WorldStage` (`game/`) yang merakitnya, `WorldScreen` (`ui/`) hanya menampilkan data, dan `render/` tidak mengimpor `net`, `boot`, `ui`, maupun `game` — aturan yang dijalankan ESLint.
 
 `game` memegang entry point (`GameClient`, `GameServer`): boleh memakai semua lapisan di bawahnya, dan tidak ada lapisan bawah yang boleh mengimpor balik ke atas. Alasannya praktis: lapisan bawah bisa diganti atau dites tanpa lapisan di atasnya. Misalnya `BootController` (lapisan `boot`) dites penuh tanpa DOM, `ApiClient` (lapisan `net`) dites dengan `fetch` yang disuntikkan, dan `GameServer` dites dengan soket sungguhan di port acak.
 
@@ -134,7 +137,7 @@ Hasil pengujian aturan: 10 impor terlarang (termasuk impor relatif bertingkat `.
 
 State yang dilihat UI adalah `ClientState` (`boot/clientState.ts`): `starting` → (`checking` | `online` | `incompatible` | `offline`) → `stopped`. Union ini tertutup: menambah state baru tanpa menangani di UI adalah error kompilasi.
 
-Setelah handshake berhasil, klien berstatus **online** dan sesi dunia tetap **tertutup** — tidak ada renderer (Fase 2), tidak ada simulasi, tidak ada soket (Fase 10). UI menyatakannya apa adanya.
+Setelah handshake berhasil, klien berstatus **online** dan `main.ts` menyalakan **sesi dunia lokal** (`startWorld` → `WorldStage`): renderer PixiJS, kamera, dan satu zona prototipe. Ini bukan dunia server — tidak ada soket (Fase 10), tidak ada akun (Fase 11), dan tidak ada pemain lain. Layar dunia menyatakannya apa adanya lewat catatan "prototype zone" dan HUD debug.
 
 ```
             start()
@@ -214,6 +217,8 @@ Port adalah _interface_ yang dipakai kode game dan HTTP untuk apa pun yang berad
 | `CharacterRepository<TPersisted>` | `apps/server/src/ports/characters.ts`   | 11-12 | Character, Inventory, Equipment, Quest |
 | `WorldRepository<TZoneState>`     | `apps/server/src/ports/world.ts`        | 12    | data dunia yang persisten              |
 | `GameConnection<TIntent, TEvent>` | `apps/client/src/net/GameConnection.ts` | 10    | (jaringan, bukan basis data)           |
+
+Selain itu ada satu port **yang sudah punya implementasi**: `WorldRenderer` (`apps/client/src/render/WorldRenderer.ts`). Kontraknya (`init`, `apply`, `render`, `resize`, `setPixelated`, `destroy`) dipenuhi `PixiRenderer`, dan justru karena itu `WorldSession` dan seluruh logika dunia bisa dites di Node tanpa GPU — serta diganti renderer lain (canvas, atau renderer palsu di tes) tanpa menyentuh kode game.
 
 **Protokol realtime belum ada, tetapi bentuknya sudah ditetapkan** (`shared/protocol/messages.ts`) supaya kedua sisi tidak menulis kontrak yang sama dua kali: satu _envelope_ (`v`, `kind`, `payload`) yang divalidasi `MessageEnvelopeSchema`, `MessageRegistry` (kind → skema payload), tipe `MessageOf`/`ClientIntent`/`ServerMessage`, serta `decodeMessageFrame`/`encodeMessageFrame` yang mengembalikan `null` (bukan melempar) untuk frame yang tidak dikenali. Registry pertama ditulis di Fase 10; sampai saat itu tidak ada satu pun jenis pesan yang dibuat-buat, dan **tidak ada soket** di seluruh kode.
 
@@ -333,10 +338,15 @@ packages/shared/logging/   level (trace…fatal, silent) + createLogger({ name, 
 - DOM dites dengan `happy-dom` (dipilih ketimbang `jsdom` karena `jsdom` 30 mensyaratkan Node >= 22.22.2, lebih tinggi dari `engines` proyek).
 - Tes keamanan dibuktikan bisa gagal: kode diubah sementara agar memakai `innerHTML`, dan tes yang relevan harus merah sebelum kode dikembalikan.
 - Entry point dites sungguhan, bukan disimulasikan: `GameServer` membuka soket TCP di port acak (`port: 0`) lalu diambil dengan `fetch` dan divalidasi dengan skema bersama; port yang sudah dipakai diuji dengan benar-benar menabrak dua server. `GameClient` dites dengan `ApiClient` yang `fetch`-nya disuntikkan dan waktu palsu (`vi.useFakeTimers`).
-- **Belum otomatis di repo:** tes browser end-to-end. Pada verifikasi Fase 1, skenario browser (Online, Offline lalu Retry, pemulihan otomatis, protokol tidak cocok, teks server berbahaya, keyboard, tampilan mobile) dijalankan manual di Chromium sungguhan, dan semuanya lulus. Menjadikannya tes otomatis (mis. Playwright) dianjurkan mulai Fase 2 ketika ada tampilan yang perlu dijaga.
-- CI (`.github/workflows/ci.yml`): `npm ci`, `npm run check`, `npm run build` pada Ubuntu dan Windows, Node 22 dan 24. Berkas workflow sudah divalidasi dengan parser workflow resmi GitHub, tetapi **belum pernah dijalankan di GitHub**; jalankan pertama kalinya saat di-push.
+- **Renderer dites tanpa GPU.** `render/` dan `game/` murni TypeScript: `diffScene`, `Camera`, `AssetLoader`, `GameLoop`, `WorldSession`, dan `WorldStage` diuji di Node (dengan `WorldRenderer` palsu yang mencatat panggilan). `manifests.test.ts` membandingkan manifest dengan konstanta generator aset, sehingga gambar dan kode tidak bisa menyimpang diam-diam.
+- **Yang tidak bisa dites tanpa browser** adalah hal yang memang milik browser: apakah WebGL benar-benar menggambar, seberapa halus rasanya, dan apakah resize terasa benar. Karena itu pemilik proyek memverifikasinya dengan membuka `npm run dev`, dan tes otomatis berbasis browser (Playwright) tetap **ditunda** sesuai keputusan Fase 2.
+- CI (`.github/workflows/ci.yml`): `npm ci`, `npm run check`, `npm run build` pada Ubuntu dan Windows, Node 22 dan 24. Sudah berjalan di GitHub dan hijau pada PR #2 (empat job, 25-73 detik).
 
 ## 13. Cara menambah fitur (resep)
+
+**Tile, objek, karakter, atau efek baru**
+
+Ikuti [ASSETS.md](ASSETS.md): gambar di `scripts/assets/*.mjs` (dari palet proyek), daftarkan di `*_ORDER`, samakan `SHEETS` di `apps/client/src/render/manifests.ts`, lalu `npm run assets` dan `npm run check`. Tes manifest akan menolak manifest dan gambar yang tidak sinkron.
 
 **Endpoint HTTP baru**
 
@@ -359,27 +369,30 @@ Kalau angkanya harus sama di kedua sisi, tambahkan ke `GameConfig` (`shared/conf
 
 ## 14. Keputusan yang sengaja ditunda
 
-| Keputusan                                   | Diputuskan di | Opsi yang dipertimbangkan                                                         |
-| ------------------------------------------- | ------------- | --------------------------------------------------------------------------------- |
-| Renderer 2D                                 | Fase 2        | PixiJS (renderer saja, cocok dengan pemisahan modul) vs framework game penuh      |
-| Model gerak dan prediksi                    | Fase 3        | fungsi gerak deterministik di `shared`, dipakai klien dan server                  |
-| Format peta                                 | Fase 4        | JSON gaya Tiled yang divalidasi zod, vs format sendiri                            |
-| Framework UI untuk overlay (HUD, inventori) | Fase 7        | DOM helper `el()` yang ada, vs Preact + signals                                   |
-| Transport dan protokol realtime             | Fase 10       | WebSocket mentah + protokol sendiri di `shared` (bawaan), vs framework room       |
-| Basis data dan lapisan akses                | Fase 11       | PostgreSQL dengan Drizzle, Kysely, atau Prisma; opsi lebih ringan untuk dev lokal |
-| Definisi `Item`: data statis atau tabel     | Fase 7/11     | berkas data tervalidasi di repo vs tabel basis data                               |
+| Keputusan                                   | Diputuskan di                              | Opsi yang dipertimbangkan                                                         |
+| ------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------- |
+| Renderer 2D                                 | **Fase 2 — diputuskan: PixiJS 8**          | PixiJS (renderer saja, cocok dengan pemisahan modul) vs framework game penuh      |
+| Model gerak dan prediksi                    | Fase 3                                     | fungsi gerak deterministik di `shared`, dipakai klien dan server                  |
+| Format peta                                 | Fase 4                                     | JSON gaya Tiled yang divalidasi zod, vs format sendiri                            |
+| Framework UI untuk overlay (HUD, inventori) | Fase 7                                     | DOM helper `el()` yang ada, vs Preact + signals                                   |
+| Transport dan protokol realtime             | Fase 10                                    | WebSocket mentah + protokol sendiri di `shared` (bawaan), vs framework room       |
+| Basis data dan lapisan akses                | Fase 11                                    | PostgreSQL dengan Drizzle, Kysely, atau Prisma; opsi lebih ringan untuk dev lokal |
+| Definisi `Item`: data statis atau tabel     | Fase 7/11                                  | berkas data tervalidasi di repo vs tabel basis data                               |
+| Sumber aset visual                          | **Fase 2 — diputuskan: generator di repo** | skrip generator + palet sendiri (dipakai) vs aset berlisensi dari luar            |
 
 ## 15. Perubahan terhadap rencana yang diposting sebelum coding
 
-| Rencana awal                            | Yang dibangun                                                 | Alasan                                                                                                                        |
-| --------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `BootController` di `src/app/`          | `src/boot/`                                                   | Menjaga arah dependensi `game → ui → boot → net → core` (bagian 4.2)                                                          |
-| Bundel server dengan `tsup`             | Skrip esbuild: `apps/server/scripts/build.mjs`                | README `tsup` menyatakan proyeknya tidak lagi dirawat; esbuild adalah dasar yang sama tanpa lapisan tambahan                  |
-| Scope paket `@realm/*`                  | `@project-realm/*`                                            | `@realm` dipakai MongoDB Realm; `@project-realm` terbukti bebas di npm (E404)                                                 |
-| (belum direncanakan)                    | `happy-dom` (devDependency klien) dan aturan ESLint pelapisan | Agar lapisan UI punya tes permanen dan klaim "arah dependensi satu arah" benar-benar ditegakkan                               |
-| `apps/server/src/app.ts`                | `src/http/buildApp.ts`                                        | `buildApp()` tinggal di lapisan `http`, dan nama `app` dipakai aturan lint sebagai lapisan terlarang untuk impor ke atas      |
-| `apps/client/src/app/startApp.ts`       | `src/game/GameClient.ts` + `src/main.ts`                      | Entry point yang eksplisit (`GameClient`) dengan siklus hidup, logging, dan state bertipe; `main.ts` hanya merakit            |
-| `network message types` ditunda Fase 10 | envelope + registry + tipe pesan di `shared/protocol/`        | Kontrak bersama lebih murah ditulis sebelum dua sisi mengimpor sesuatu; tidak ada transport atau pesan palsu yang ikut dibuat |
+| Rencana awal                            | Yang dibangun                                                 | Alasan                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BootController` di `src/app/`          | `src/boot/`                                                   | Menjaga arah dependensi `game → ui → boot → net → core` (bagian 4.2)                                                                                      |
+| Bundel server dengan `tsup`             | Skrip esbuild: `apps/server/scripts/build.mjs`                | README `tsup` menyatakan proyeknya tidak lagi dirawat; esbuild adalah dasar yang sama tanpa lapisan tambahan                                              |
+| Scope paket `@realm/*`                  | `@project-realm/*`                                            | `@realm` dipakai MongoDB Realm; `@project-realm` terbukti bebas di npm (E404)                                                                             |
+| (belum direncanakan)                    | `happy-dom` (devDependency klien) dan aturan ESLint pelapisan | Agar lapisan UI punya tes permanen dan klaim "arah dependensi satu arah" benar-benar ditegakkan                                                           |
+| `apps/server/src/app.ts`                | `src/http/buildApp.ts`                                        | `buildApp()` tinggal di lapisan `http`, dan nama `app` dipakai aturan lint sebagai lapisan terlarang untuk impor ke atas                                  |
+| `apps/client/src/app/startApp.ts`       | `src/game/GameClient.ts` + `src/main.ts`                      | Entry point yang eksplisit (`GameClient`) dengan siklus hidup, logging, dan state bertipe; `main.ts` hanya merakit                                        |
+| `network message types` ditunda Fase 10 | envelope + registry + tipe pesan di `shared/protocol/`        | Kontrak bersama lebih murah ditulis sebelum dua sisi mengimpor sesuatu; tidak ada transport atau pesan palsu yang ikut dibuat                             |
+| Aset dari perancang/aset pihak ketiga   | Generator aset sendiri (`scripts/assets/`)                    | Fase 2 butuh gambar untuk menguji renderer; menggambarnya dari palet sendiri menjaga kebijakan orisinalitas tanpa menunggu seniman                        |
+| Peta prototipe memakai tile awan        | Fog dua-dimensi di dalam `WorldSession`, dinyatakan di layar  | Menguji pembaruan tile per-lapisan (yang dibutuhkan tilemap sungguhan) sekaligus memberi area yang jelas "belum dijelajahi" tanpa membuat fitur permainan |
 
 ## 16. Penanganan error
 
@@ -395,3 +408,30 @@ Dua keluarga error, dipisahkan karena pemanggilnya butuh hal yang berbeda:
 - **Klien:** `installGlobalErrorHandlers` (`core/globalErrors.ts`) mengirim `error` dan `unhandledrejection` yang lolos ke logger. Handler ini hanya **melaporkan**; ia tidak mencoba memulihkan state yang sudah tidak diketahui lagi. Kegagalan saat start (konfigurasi tidak valid) ditangkap di `main.ts` dan ditampilkan lewat `FatalErrorScreen` — pesan sebagai teks, bukan HTML.
 - **Server:** `uncaughtException`/`unhandledRejection` → log `fatal` → shutdown rapi → exit 1. 5xx ke klien selalu generik (`internal_error`), detailnya hanya di log server.
 - **Logging error tidak boleh gagal:** `toErrorDetails()` menormalkan apa pun yang dilempar (Error, string, `null`, objek melingkar) menjadi bentuk JSON dengan kedalaman `cause` yang dibatasi, dan `ErrorDetails` sudah diuji bisa `JSON.stringify`.
+
+## 17. Rendering 2D (Fase 2)
+
+Renderer adalah bagian klien yang paling mudah menjadi kusut, jadi batasnya dibuat eksplisit: **logika dunia tidak tahu apa-apa soal PixiJS, dan renderer tidak tahu apa-apa soal server.**
+
+```
+WorldSession (game/)          render/                         PixiJS
+  state dunia  ──diffScene──▶  RenderCommand[]  ──apply()──▶  PixiRenderer
+  (tile, objek, aktor,         (data, bukan gambar)            (satu-satunya berkas
+   efek, label)                                                  yang mengimpor pixi.js)
+```
+
+- **Deskripsi scene sebagai data.** `render/scene.ts` mendefinisikan `WorldScene` (lapisan tile, objek, aktor, efek, label dunia) dan `RenderCommand` (`layer-added`, `tiles-changed`, `actor-changed`, …). `diffScene(sebelum, sesudah)` membandingkan **identitas objek lebih dulu** dan hanya menghasilkan perintah untuk yang benar-benar berubah; perbandingan struktural dipakai sebagai cadangan. Hasilnya: pemain diam = nol perintah untuk pemain itu, satu karakter berjalan = satu perintah, dan seluruh fungsi diff dites di Node tanpa GPU.
+- **Port `WorldRenderer`.** `init`, `apply`, `render`, `resize`, `setPixelated`, `destroy`. `PixiRenderer` adalah satu-satunya implementasi hari ini, tetapi `WorldStage` dan `WorldSession` tidak pernah menyebut namanya: tes menyuntikkan renderer palsu yang mencatat panggilan.
+- **Lapisan gambar** hidup di renderer, bukan di logika: `RENDER_LAYERS` = `ground → objects → characters → npcs → effects → world-ui`. Objek dunia punya `sortableChildren` dengan `zIndex = y`, jadi pohon di depan pemain menutupinya dan pohon di belakang tidak. Aktor dan NPC berada di dua lapisan terpisah supaya pemain tidak pernah tertutup NPC yang berdiri di tile yang sama.
+- **Koordinat.** `worldTiles → (× TILE_SIZE) → worldPixels → (kamera + zoom) → screenPixels`. Matematikanya di `packages/shared/src/render/camera.ts` beserta tesnya; kamera memakai satu transform pada container dunia, sehingga memindahkan kamera adalah satu penugasan posisi/skala per frame, bukan satu perulangan atas semua sprite. Semua hitungan game tetap dalam CSS piksel; _device pixel ratio_ hanya urusan renderer.
+- **Loop dan delta time.** `GameLoop` (`game/GameLoop.ts`) adalah satu-satunya pemilik `requestAnimationFrame`; PixiJS dibuat dengan `autoStart: false` agar tidak ada jam kedua. Delta per frame dibatasi (maksimum 0,25 s) supaya tab yang lama tidak terlihat bisa "melompat", lalu `FixedTimestep` bersama mengubahnya menjadi langkah simulasi dengan batas _catch-up_; sisa waktu yang tidak bisa dikejar dilaporkan (HUD "Dropped time"), bukan disembunyikan.
+- **Kamera.** Mengikuti titik tengah karakter dengan pemulusan eksponensial yang **tidak bergantung frame rate**, lalu dijepit ke batas peta (`clampToMap`) sehingga pemain tidak pernah menatap kehampaan di luar dunia. Zoom default dipilih dari ukuran layar dan dibatasi 1-6×.
+- **Resize dan DPR.** Satu `ResizeObserver` pada elemen canvas memanggil `handleResize()`: ukuran baru diserahkan ke renderer **dan** ke kamera, sedangkan resolusi gambar dibatasi `renderer.maxPixelRatio` (default 2). Layar tersembunyi (`visibilitychange`) menghentikan loop supaya tab latar tidak menggambar ke kanvas yang tak terlihat.
+- **Culling.** Hanya chunk tile 16×16 yang bersinggungan dengan viewport (ditambah margin 2 tile) yang digambar, dan renderer mengembalikan hitungan nyata (`RenderStats`) untuk HUD; layar 800×600 pada zoom 3 hanya menggambar sebagian kecil dari 2.560 tile zona prototipe.
+- **Aset.** `AssetLoader` memuat lembar sprite lewat loader yang disuntikkan, melaporkan progres **nyata** (berkas selesai dari total, dipakai layar pemuatan), dan memvalidasi setiap rect frame terhadap tekstur sebelum digambar. Satu lembar di-upload sekali sebagai sumber bersama; setiap frame hanyalah `Texture` yang berbagi sumber itu. Asal-usul gambarnya: [ASSETS.md](ASSETS.md).
+
+**Keterbatasan yang diketahui (jujur, bukan bug yang tak disadari):**
+
+- Posisi aktor diperbarui pada laju langkah tetap (20 Hz), belum diinterpolasi antar-langkah. Pada 4,2 tile/detik terlihat sebagai lompatan kecil ± 0,2 tile; menyelesaikannya adalah bagian dari Fase 3 (gerak pemain), bersama prediksi dan rekonsiliasi.
+- Layer tile digambar sebagai `Sprite` per tile di dalam chunk, bukan `ParticleContainer`/mesh. Untuk satu zona ini lebih dari cukup; optimasi masuk Fase 14 setelah ada data nyata.
+- Zona prototipe dan fog "belum dijelajahi" adalah alat uji renderer, bukan fitur permainan: keduanya dibuat di klien, diberi label di layar, dan akan diganti oleh peta dari server (Fase 4) serta otoritas server (Fase 10).

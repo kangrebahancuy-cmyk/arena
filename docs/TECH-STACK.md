@@ -90,11 +90,11 @@ Versi major Vite (8) dan Vitest (5) saling cocok: Vitest 5 mensyaratkan Vite >= 
 
 ## 6. Yang sengaja BELUM dipasang
 
-Berikut kandidat untuk fase berikutnya. **Belum ada satu pun yang terpasang**, dan nomor versi hanyalah hasil pemeriksaan registri pada 2026-10-02 sebagai acuan. Verifikasi ulang (versi, peer dependency, dukungan Windows) saat fasenya dimulai.
+Berikut kandidat untuk fase berikutnya. Baris Fase 2 **sudah terpasang** (`pixi.js` 8.22.0, lisensi MIT, dipilih dan disetujui di Fase 2); sisanya belum ada satu pun yang terpasang, dan nomor versi hanyalah hasil pemeriksaan registri pada 2026-10-02 sebagai acuan. Verifikasi ulang (versi, peer dependency, dukungan Windows) saat fasenya dimulai.
 
 | Fase | Kebutuhan                   | Kandidat                                                                                 | Catatan                                                                             |
 | ---- | --------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 2    | Renderer 2D                 | `pixi.js` 8.22.0                                                                         | Renderer saja (bukan framework game), sehingga game loop dan state tetap milik kita |
+| 2    | Renderer 2D                 | `pixi.js` 8.22.0 **terpasang**                                                           | Renderer saja (bukan framework game), sehingga game loop dan state tetap milik kita |
 | 4    | Peta tile                   | `@pixi/tilemap` 5.0.2                                                                    | Atau penggambar tile sendiri; putuskan bersama format peta                          |
 | 7    | UI overlay (HUD, inventori) | `preact` 11.0.0, `@preact/signals` 2.11.3                                                | Atau lanjut dengan helper DOM `el()`; putuskan setelah melihat kompleksitas nyata   |
 | 10   | WebSocket                   | `@fastify/websocket` 11.3.1 (berbasis `ws` 8.22.0)                                       | Protokol sendiri di `shared`, divalidasi zod                                        |

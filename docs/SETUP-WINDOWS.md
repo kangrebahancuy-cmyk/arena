@@ -80,20 +80,23 @@ Jawaban yang benar berupa JSON dengan `"status":"ok"` dan `"service":"project-re
 
 ## 5. Perintah sehari-hari
 
-| Perintah                  | Fungsi                                                                      |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`             | Server (`:3001`) dan klien (`:5173`) sekaligus, dengan muat ulang otomatis  |
-| `npm run dev:server`      | Hanya server                                                                |
-| `npm run dev:client`      | Hanya klien                                                                 |
-| `npm run check`           | Typecheck, lint, cek format, dan semua tes (jalankan sebelum commit)        |
-| `npm test`                | Semua tes                                                                   |
-| `npm run lint:fix`        | Memperbaiki masalah lint yang bisa diperbaiki otomatis                      |
-| `npm run format`          | Merapikan format semua berkas                                               |
-| `npm run build`           | Build produksi: server ke `apps/server/dist`, klien ke `apps/client/dist`   |
-| `npm start`               | Menjalankan server hasil build (hanya API, `:3001`)                         |
-| `npm run preview`         | Menyajikan klien hasil build di `:4173`, dengan `/api` diteruskan ke server |
-| `npm run clean`           | Menghapus hasil build                                                       |
-| `npm run clean -- --deps` | Menghapus juga semua `node_modules` (lalu jalankan `npm install` lagi)      |
+| Perintah                  | Fungsi                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| `npm run dev`             | Server (`:3001`) dan klien (`:5173`) sekaligus, dengan muat ulang otomatis      |
+| `npm run dev:server`      | Hanya server                                                                    |
+| `npm run dev:client`      | Hanya klien                                                                     |
+| `npm run check`           | Typecheck, lint, cek format, dan semua tes (jalankan sebelum commit)            |
+| `npm test`                | Semua tes                                                                       |
+| `npm run lint:fix`        | Memperbaiki masalah lint yang bisa diperbaiki otomatis                          |
+| `npm run format`          | Merapikan format semua berkas                                                   |
+| `npm run build`           | Build produksi: server ke `apps/server/dist`, klien ke `apps/client/dist`       |
+| `npm run assets`          | Membuat ulang aset prototipe (tile, objek, karakter, efek) secara deterministik |
+| `npm start`               | Menjalankan server hasil build (hanya API, `:3001`)                             |
+| `npm run preview`         | Menyajikan klien hasil build di `:4173`, dengan `/api` diteruskan ke server     |
+| `npm run clean`           | Menghapus hasil build                                                           |
+| `npm run clean -- --deps` | Menghapus juga semua `node_modules` (lalu jalankan `npm install` lagi)          |
+
+**Setelah server online:** klik/ketik di halaman untuk fokus, lalu jalan dengan **WASD** atau tombol panah. **+** / **-** untuk zoom, **0** untuk reset zoom, **P** untuk mengganti penajaman piksel. Kalau gambar tidak muncul, pastikan `apps/client/public/assets/*.png` ada (atau jalankan `npm run assets`).
 
 **Mencoba versi produksi lokal:** jalankan `npm run build`, lalu di satu terminal `npm start`, dan di terminal lain `npm run preview`, kemudian buka http://localhost:4173.
 

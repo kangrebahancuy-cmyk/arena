@@ -14,6 +14,16 @@ export * from './logging/logger';
 // Realtime protocol framing and typed message containers (used from Phase 10).
 export * from './protocol/messages';
 
+// Map format shared by the client renderer and the future server-side map loading (Phase 4).
+export * from './protocol/world';
+
+// Shared maths: tile grid, camera, zero-allocation geometry helpers.
+export * from './render/camera';
+export * from './render/tileGrid';
+
+// Deterministic simulation primitives (used by the client loop now, the server tick in Phase 10).
+export * from './simulation/fixedTimestep';
+
 // Domain types.
 export * from './entities/player';
 export * from './world/direction';

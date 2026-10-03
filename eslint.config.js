@@ -16,7 +16,7 @@ import tseslint from 'typescript-eslint';
  *
  * Layering INSIDE each app uses the same mechanism. A layer may import only from layers to its right:
  *
- *   client:  main -> game -> ui -> boot -> net -> core   (config and shared are usable from anywhere)
+ *   client:  main -> game -> ui -> boot -> render -> net -> core   (config and shared are usable anywhere)
  *   server:  main -> game -> http -> config | core | ports
  *
  * "game" holds the entry points (GameClient / GameServer): they may use everything below them, and
@@ -114,7 +114,12 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('core/config', ['net', 'boot', 'ui', 'game'])] },
+        {
+          patterns: [
+            ...CLIENT_BASE,
+            mayNotImport('core/config', ['net', 'boot', 'render', 'ui', 'game']),
+          ],
+        },
       ],
     },
   },
@@ -123,7 +128,18 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('net', ['boot', 'ui', 'game'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('net', ['boot', 'render', 'ui', 'game'])] },
+      ],
+    },
+  },
+  {
+    // The renderer knows about images, the GPU and the scene description - nothing above it. A
+    // renderer that could reach the boot handshake or the UI would no longer be replaceable.
+    files: ['apps/client/src/render/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...CLIENT_BASE, mayNotImport('render', ['net', 'boot', 'ui', 'game'])] },
       ],
     },
   },
@@ -132,16 +148,18 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('boot', ['ui', 'game'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('boot', ['render', 'ui', 'game'])] },
       ],
     },
   },
   {
+    // The UI layer may describe what it shows (including renderer types such as asset progress), but
+    // it must never drive the game: data flows in through methods, actions flow out through callbacks.
     files: ['apps/client/src/ui/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['game'])] },
+        { patterns: [...CLIENT_BASE, mayNotImport('ui', ['net', 'game'])] },
       ],
     },
   },

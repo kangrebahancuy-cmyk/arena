@@ -2,19 +2,21 @@
 
 > **Project Realm** adalah nama sementara untuk sebuah MMORPG 2D berbasis browser yang **100% orisinal**: real-time, dunia persisten, server sebagai otoritas. Terinspirasi oleh genre MMORPG klasik, tanpa menyalin aset, nama, peta, kode, atau UI dari game mana pun ([kebijakan orisinalitas](docs/ORIGINALITY.md)).
 
-**Status: Fase 1 dan Fase 1.5 selesai (fondasi proyek + fondasi arsitektur).** Game-nya sendiri belum ada. Yang ada adalah fondasi yang dapat dijalankan dan diuji — entry point `GameClient`/`GameServer`, sistem konfigurasi, logging, penanganan error, dan tipe bersama — tempat fitur-fitur berikutnya dibangun satu fase pada satu waktu ([roadmap](docs/ROADMAP.md)).
+**Status: Fase 1, 1.5, dan 2 selesai (fondasi proyek, fondasi arsitektur, rendering 2D).** Yang berjalan hari ini: server Fastify dengan `GET /api/health`, klien yang melakukan handshake sungguhan, dan — setelah server online — sebuah **zona prototipe 2D** yang digambar PixiJS dengan kamera mengikuti pemain. Ini belum game: tidak ada login, tidak ada pemain lain, tidak ada pertarungan maupun inventori, dan asetnya masih _programmer art_ ([roadmap](docs/ROADMAP.md), [aset](docs/ASSETS.md)).
 
 ## Apa yang sudah nyata, dan apa yang belum
 
-| Sudah ada dan teruji                                                                                                                                          | Belum ada (sengaja)                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `GameServer` (entry point server) di atas Fastify: `GET /api/health`, header keamanan, rate limit, graceful shutdown, konfigurasi env tervalidasi             | Rendering 2D, input, gerak, peta, NPC, monster, pertarungan, inventori, quest (Fase 2-9) |
-| `GameClient` (entry point klien) + layar boot yang menampilkan hasil pemeriksaan server **sungguhan**: online, offline (retry otomatis), protokol tidak cocok | WebSocket multiplayer (Fase 10)                                                          |
-| Kontrak bersama (zod) di `packages/shared`: HTTP, `GameConfig`, `PlayerState`, tipe pesan protokol, level log, `RealmError`                                   | Akun, login, basis data, penyimpanan karakter dan dunia (Fase 11-12)                     |
-| Sistem konfigurasi berlapis + variabel lingkungan tervalidasi, logging terstruktur (satu fasada untuk klien dan server), penanganan error bertipe             | Chat dan sosial, optimasi, deployment (Fase 13-15)                                       |
-| Lint (termasuk aturan pelapisan), format, 206 tes, CI (Ubuntu dan Windows)                                                                                    | —                                                                                        |
+| Sudah ada dan teruji                                                                                                                                                                                                                                                      | Belum ada (sengaja)                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GameServer` (entry point server) di atas Fastify: `GET /api/health`, header keamanan, rate limit, graceful shutdown, konfigurasi env tervalidasi                                                                                                                         | Input dan gerak pemain, peta dari server, tabrakan, NPC, monster, pertarungan, inventori, quest (Fase 3-9) |
+| `GameClient` (entry point klien) + layar boot yang menampilkan hasil pemeriksaan server **sungguhan**: online, offline (retry otomatis), protokol tidak cocok                                                                                                             | WebSocket multiplayer (Fase 10)                                                                            |
+| Kontrak bersama (zod) di `packages/shared`: HTTP, `GameConfig`, `PlayerState`, tipe pesan protokol, level log, `RealmError`, format peta (`GameMapSchema`)                                                                                                                | Akun, login, basis data, penyimpanan karakter dan dunia (Fase 11-12)                                       |
+| **Renderer 2D (Fase 2):** PixiJS 8 (WebGL), loop berbasis delta time, kamera mengikuti pemain dan dijepit ke peta, resize + `devicePixelRatio`, pemuatan aset dengan progres nyata, lapisan ground/objects/characters/npcs/effects/world-ui, culling per chunk, HUD debug | Chat dan sosial, optimasi, deployment (Fase 13-15)                                                         |
+| **Aset orisinal** dari generator di repo (`npm run assets`): tile, objek, karakter, efek - semuanya _programmer art_, bukan seni final ([ASSETS.md](docs/ASSETS.md))                                                                                                      | Seni final, animasi pertarungan, dan atlas yang dioptimalkan (setelah ada seniman)                         |
+| Sistem konfigurasi berlapis + variabel lingkungan tervalidasi, logging terstruktur (satu fasada untuk klien dan server), penanganan error bertipe                                                                                                                         | -                                                                                                          |
+| Lint (termasuk aturan pelapisan), format, **333 tes** (klien 167, server 45, shared 121), CI (Ubuntu dan Windows)                                                                                                                                                         | -                                                                                                          |
 
-Fitur yang belum dibangun berbentuk **interface bertanda `TODO`** di kode (`AuthService`, `CharacterRepository`, `WorldRepository`, `GameConnection`). Tipe protokol realtime sudah ada di `packages/shared/src/protocol/`, tetapi **belum ada soket, belum ada simulasi, dan belum ada satu pun pesan permainan** — registry pesan ditulis di Fase 10. **Tidak ada data atau API palsu:** layar yang Anda lihat hanya menampilkan apa yang benar-benar dijawab server.
+Fitur yang belum dibangun berbentuk **interface bertanda `TODO`** di kode (`AuthService`, `CharacterRepository`, `WorldRepository`, `GameConnection`). Tipe protokol realtime sudah ada di `packages/shared/src/protocol/`, tetapi **belum ada soket dan belum ada satu pun pesan permainan** — registry pesan ditulis di Fase 10. **Tidak ada data atau API palsu:** zona prototipe diberi label "prototype" di layar, berjalan sepenuhnya di klien, dan tidak mengaku sebagai dunia server; layar boot hanya menampilkan apa yang benar-benar dijawab server.
 
 ## Mulai cepat di Windows
 
@@ -36,7 +38,9 @@ npm install
 npm run dev
 ```
 
-**3. Buka http://localhost:5173** di browser. Anda akan melihat kartu "System check" dengan server **Online**. Hentikan dengan **Ctrl+C**.
+**3. Buka http://localhost:5173** di browser. Kartu "System check" akan menunjukkan server **Online**, lalu **zona prototipe** terbuka: jalan dengan **WASD atau panah**, **+**/**-** untuk zoom, **0** untuk reset zoom, **P** untuk mengganti penajaman piksel. Hentikan dengan **Ctrl+C**.
+
+Aset prototipe sudah ikut di repo; kalau Anda ingin mengubah gambarnya, jalankan `npm run assets` dan muat ulang halaman.
 
 Butuh Node.js **22.13 atau lebih baru** (`node -v`). Ada masalah? Lihat [panduan Windows](docs/SETUP-WINDOWS.md): kebijakan eksekusi PowerShell, port yang dicadangkan Windows (`EACCES`), firewall, `EBADENGINE`, WSL, dan membuka dari ponsel.
 
@@ -48,6 +52,7 @@ Butuh Node.js **22.13 atau lebih baru** (`node -v`). Ada masalah? Lihat [panduan
 | `npm run check`                     | Typecheck, lint, cek format, dan semua tes (jalankan sebelum commit)            |
 | `npm test`                          | Semua tes                                                                       |
 | `npm run build`                     | Build produksi: `apps/server/dist` dan `apps/client/dist`                       |
+| `npm run assets`                    | Membuat ulang aset prototipe dari `scripts/assets/` (deterministik)             |
 | `npm start`                         | Menjalankan server hasil build (hanya API)                                      |
 | `npm run preview`                   | Menyajikan klien hasil build di `:4173` (jalankan `npm start` di terminal lain) |
 | `npm run lint:fix`                  | Memperbaiki masalah lint otomatis                                               |
